@@ -1,4 +1,4 @@
-package dicomserver
+package server
 
 import (
 	"context"
