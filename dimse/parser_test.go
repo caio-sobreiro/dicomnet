@@ -83,7 +83,7 @@ func TestParseDIMSECommand_Success(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			msg, err := parseDIMSECommand(tt.data)
+			msg, err := parseDIMSECommand(tt.data, nil)
 			if err != nil {
 				t.Fatalf("parseDIMSECommand() error = %v", err)
 			}
@@ -129,7 +129,7 @@ func TestParseDIMSECommand_Errors(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			msg, err := parseDIMSECommand(tt.data)
+			msg, err := parseDIMSECommand(tt.data, nil)
 			if tt.expectError {
 				if err == nil {
 					t.Error("Expected error but got none")
@@ -158,7 +158,7 @@ func TestParseDIMSECommand_EdgeCases(t *testing.T) {
 		buf[8] = 0x20
 		// Rest are zeros
 
-		msg, err := parseDIMSECommand(buf)
+		msg, err := parseDIMSECommand(buf, nil)
 		// Should not error, just stop parsing or handle gracefully
 		if err != nil {
 			t.Logf("Got expected error for truncated data: %v", err)
@@ -178,7 +178,7 @@ func TestParseDIMSECommand_EdgeCases(t *testing.T) {
 		buf[4], buf[5], buf[6], buf[7] = 0x00, 0x00, 0x20, 0x00
 		buf[8], buf[9] = 0x20, 0x00
 
-		msg, err := parseDIMSECommand(buf)
+		msg, err := parseDIMSECommand(buf, nil)
 		// Parser should handle this gracefully (stops on sanity check)
 		if err != nil {
 			t.Logf("Got expected error for large length: %v", err)
@@ -198,7 +198,7 @@ func TestParseDIMSECommand_EdgeCases(t *testing.T) {
 		buf = append(buf, lengthBytes...)
 		buf = append(buf, sopUID...)
 
-		msg, err := parseDIMSECommand(buf)
+		msg, err := parseDIMSECommand(buf, nil)
 		if err != nil {
 			t.Fatalf("parseDIMSECommand() error = %v", err)
 		}
@@ -222,7 +222,7 @@ func TestParseDIMSECommand_EdgeCases(t *testing.T) {
 		buf = append(buf, 0x02, 0x00, 0x00, 0x00)
 		buf = append(buf, 0x01, 0x00)
 
-		msg, err := parseDIMSECommand(buf)
+		msg, err := parseDIMSECommand(buf, nil)
 		if err != nil {
 			t.Fatalf("parseDIMSECommand() error = %v", err)
 		}
@@ -245,7 +245,7 @@ func TestParseDIMSECommand_EdgeCases(t *testing.T) {
 		buf = append(buf, 0x02, 0x00, 0x00, 0x00)
 		buf = append(buf, 0x20, 0x00)
 
-		msg, err := parseDIMSECommand(buf)
+		msg, err := parseDIMSECommand(buf, nil)
 		if err != nil {
 			t.Fatalf("parseDIMSECommand() error = %v", err)
 		}
@@ -353,7 +353,7 @@ func TestCreateDIMSECommand_RoundTrip(t *testing.T) {
 			data := createDIMSECommand(&tt.msg)
 
 			// Parse it back
-			parsed, err := parseDIMSECommand(data)
+			parsed, err := parseDIMSECommand(data, nil)
 			if err != nil {
 				t.Fatalf("parseDIMSECommand() error = %v", err)
 			}
@@ -392,7 +392,7 @@ func TestCreateDIMSECommand_OddLengthUID(t *testing.T) {
 	data := createDIMSECommand(&msg)
 
 	// Parse it back
-	parsed, err := parseDIMSECommand(data)
+	parsed, err := parseDIMSECommand(data, nil)
 	if err != nil {
 		t.Fatalf("parseDIMSECommand() error = %v", err)
 	}

@@ -10,7 +10,11 @@ import (
 )
 
 // parseDIMSECommand parses a DIMSE command from raw bytes
-func parseDIMSECommand(data []byte) (*types.Message, error) {
+func parseDIMSECommand(data []byte, logger *slog.Logger) (*types.Message, error) {
+	if logger == nil {
+		logger = slog.Default()
+	}
+
 	msg := &types.Message{}
 
 	// This is a simplified parser - in practice you'd need a full DICOM parser
@@ -20,13 +24,13 @@ func parseDIMSECommand(data []byte) (*types.Message, error) {
 		return nil, fmt.Errorf("DIMSE data too short: %d bytes", len(data))
 	}
 
-	slog.Debug("Parsing DIMSE command data", "size_bytes", len(data))
+	logger.Debug("Parsing DIMSE command data", "size_bytes", len(data))
 
 	// Parse DICOM elements with proper variable-length handling
 	offset := 0
 	for offset < len(data)-8 {
 		if offset+8 > len(data) {
-			slog.Debug("Not enough data for header", "offset", offset)
+			logger.Debug("Not enough data for header", "offset", offset)
 			break
 		}
 
@@ -37,13 +41,13 @@ func parseDIMSECommand(data []byte) (*types.Message, error) {
 
 		// Sanity check length
 		if length > 1000000 { // 1MB limit
-			slog.Warn("Element length too large, probably parsing error", "length", length)
+			logger.Warn("Element length too large, probably parsing error", "length", length)
 			break
 		}
 
 		// Ensure we have enough data for the value
 		if offset+8+int(length) > len(data) {
-			slog.Debug("Not enough data for element value",
+			logger.Debug("Not enough data for element value",
 				"have_bytes", len(data),
 				"need_bytes", offset+8+int(length))
 			break
@@ -59,19 +63,19 @@ func parseDIMSECommand(data []byte) (*types.Message, error) {
 				if length == 2 {
 					msg.CommandField = binary.LittleEndian.Uint16(data[valueStart:valueEnd])
 				} else {
-					slog.Warn("Command Field has wrong length", "length", length)
+					logger.Warn("Command Field has wrong length", "length", length)
 				}
 			case 0x0110: // Message ID
 				if length == 2 {
 					msg.MessageID = binary.LittleEndian.Uint16(data[valueStart:valueEnd])
 				} else {
-					slog.Warn("Message ID has wrong length", "length", length)
+					logger.Warn("Message ID has wrong length", "length", length)
 				}
 			case 0x0800: // Command Data Set Type
 				if length == 2 {
 					msg.CommandDataSetType = binary.LittleEndian.Uint16(data[valueStart:valueEnd])
 				} else {
-					slog.Warn("Command Data Set Type has wrong length", "length", length)
+					logger.Warn("Command Data Set Type has wrong length", "length", length)
 				}
 			case 0x0002: // Affected SOP Class UID
 				if length > 0 {
@@ -105,7 +109,7 @@ func parseDIMSECommand(data []byte) (*types.Message, error) {
 		}
 	}
 
-	slog.Debug("Parsed DIMSE command",
+	logger.Debug("Parsed DIMSE command",
 		"command_field", fmt.Sprintf("0x%04x", msg.CommandField),
 		"message_id", msg.MessageID)
 	return msg, nil

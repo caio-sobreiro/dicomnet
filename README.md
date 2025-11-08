@@ -31,6 +31,19 @@ This package is used by:
 - **`pkg/server/`** - DICOM server (SCP) implementation (future)
 - **`internal/services/`** - Application-specific service handlers
 
+## Logging
+
+The library uses Go's standard `log/slog` package for logging. You can inject a custom logger when creating a server using the `WithLogger` option:
+
+```go
+import "log/slog"
+
+logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
+server := server.New("MY_AE_TITLE", handler, server.WithLogger(logger))
+```
+
+If no logger is provided, the library will use `slog.Default()`.
+
 ## Usage
 
 Currently used by the DIMSE proxy server in this repository. Will be published as a standalone library once client implementation is complete.
@@ -39,18 +52,15 @@ Currently used by the DIMSE proxy server in this repository. Will be published a
 
 ```go
 import (
-    "github.com/caio-sobreiro/dicomnet/pdu"
-    "github.com/caio-sobreiro/dicomnet/dimse"
+    "log/slog"
+    "github.com/caio-sobreiro/dicomnet/server"
 )
 
-// Create DIMSE service with your handler
-dimseService := dimse.NewService(yourServiceHandler)
+// Create server with your handler
+srv := server.New("YOUR_AE_TITLE", yourServiceHandler, server.WithLogger(logger))
 
-// Create PDU layer
-pduLayer := pdu.NewLayer(conn, dimseService, "YOUR_AE_TITLE")
-
-// Handle connection
-err := pduLayer.HandleConnection()
+// Start listening
+err := srv.ListenAndServe(ctx, ":11112", "YOUR_AE_TITLE", handler)
 ```
 
 ## License

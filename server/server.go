@@ -119,8 +119,8 @@ func (s *Server) handleConnection(ctx context.Context, conn net.Conn, logger *sl
 	logger.Info("Accepted DICOM connection",
 		"remote_addr", conn.RemoteAddr())
 
-	adapter := &dimseHandlerAdapter{service: dimse.NewService(s.Handler)}
-	layer := pdu.NewLayer(conn, adapter, s.AETitle)
+	adapter := &dimseHandlerAdapter{service: dimse.NewService(s.Handler, logger)}
+	layer := pdu.NewLayer(conn, adapter, s.AETitle, logger)
 
 	if err := layer.HandleConnection(); err != nil && ctx.Err() == nil {
 		logger.Warn("DIMSE connection ended",

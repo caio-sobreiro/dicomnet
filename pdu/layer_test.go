@@ -63,7 +63,7 @@ func TestNewLayer(t *testing.T) {
 	mockHandler := &MockDIMSEHandler{}
 	aeTitle := "TEST_AE"
 
-	layer := NewLayer(mockConn, mockHandler, aeTitle)
+	layer := NewLayer(mockConn, mockHandler, aeTitle, nil)
 
 	if layer == nil {
 		t.Fatal("Expected non-nil layer")

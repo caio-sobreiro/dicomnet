@@ -48,7 +48,7 @@ func (m *MockServiceHandler) HandleDIMSE(ctx context.Context, msg *types.Message
 
 func TestNewService(t *testing.T) {
 	handler := &MockServiceHandler{}
-	service := NewService(handler)
+	service := NewService(handler, nil)
 
 	if service == nil {
 		t.Fatal("Expected non-nil service")
@@ -72,7 +72,7 @@ func TestService_HandleDIMSEMessage_CEchoNoDataset(t *testing.T) {
 		},
 	}
 
-	service := NewService(handler)
+	service := NewService(handler, nil)
 	pduLayer := &MockPDULayer{
 		SendDIMSEResponseWithDatasetFunc: func(presContextID byte, commandData []byte, datasetData []byte) error {
 			if presContextID != 1 {
@@ -118,7 +118,7 @@ func TestService_HandleDIMSEMessage_WithDataset(t *testing.T) {
 		},
 	}
 
-	service := NewService(handler)
+	service := NewService(handler, nil)
 	pduLayer := &MockPDULayer{
 		SendDIMSEResponseWithDatasetFunc: func(presContextID byte, commandData []byte, datasetData []byte) error {
 			if len(datasetData) == 0 {
@@ -167,7 +167,7 @@ func TestService_HandleDIMSEMessage_MultiFragment(t *testing.T) {
 		},
 	}
 
-	service := NewService(handler)
+	service := NewService(handler, nil)
 	pduLayer := &MockPDULayer{}
 
 	// Create command
@@ -201,7 +201,7 @@ func TestService_HandleDIMSEMessage_MultiFragment(t *testing.T) {
 
 func TestService_HandleDIMSEMessage_ParseError(t *testing.T) {
 	handler := &MockServiceHandler{}
-	service := NewService(handler)
+	service := NewService(handler, nil)
 	pduLayer := &MockPDULayer{}
 
 	// Send invalid command data (too short)
@@ -220,7 +220,7 @@ func TestService_HandleDIMSEMessage_HandlerError(t *testing.T) {
 		},
 	}
 
-	service := NewService(handler)
+	service := NewService(handler, nil)
 	pduLayer := &MockPDULayer{}
 
 	// Create valid command
@@ -254,7 +254,7 @@ func TestService_HandleDIMSEMessage_PDULayerError(t *testing.T) {
 		},
 	}
 
-	service := NewService(handler)
+	service := NewService(handler, nil)
 	pduLayer := &MockPDULayer{
 		SendDIMSEResponseWithDatasetFunc: func(presContextID byte, commandData []byte, datasetData []byte) error {
 			return errors.New("PDU send failed")

@@ -33,6 +33,7 @@ type Layer struct {
 	associationCtx *AssociationContext
 	dimseHandler   DIMSEHandler
 	serverAETitle  string
+	logger         *slog.Logger
 }
 
 // AssociationContext holds association state
@@ -179,18 +180,22 @@ type DIMSEHandler interface {
 }
 
 // NewLayer creates a new PDU layer handler
-func NewLayer(conn net.Conn, dimseHandler DIMSEHandler, serverAETitle string) *Layer {
+func NewLayer(conn net.Conn, dimseHandler DIMSEHandler, serverAETitle string, logger *slog.Logger) *Layer {
+	if logger == nil {
+		logger = slog.Default()
+	}
 	return &Layer{
 		conn:          conn,
 		dimseHandler:  dimseHandler,
 		serverAETitle: serverAETitle,
+		logger:        logger,
 	}
 }
 
 // HandleConnection manages the complete DICOM connection lifecycle
 func (p *Layer) HandleConnection() error {
 	defer p.conn.Close()
-	slog.Info("New DICOM connection", "remote_addr", p.conn.RemoteAddr())
+	p.logger.Info("New DICOM connection", "remote_addr", p.conn.RemoteAddr())
 
 	// Handle association establishment
 	if err := p.handleAssociationPhase(); err != nil {
@@ -202,9 +207,9 @@ func (p *Layer) HandleConnection() error {
 		pdu, err := p.readPDU()
 		if err != nil {
 			if err == io.EOF {
-				slog.Info("Connection closed by client", "remote_addr", p.conn.RemoteAddr())
+				p.logger.Info("Connection closed by client", "remote_addr", p.conn.RemoteAddr())
 			} else {
-				slog.Warn("Error reading PDU", "error", err, "remote_addr", p.conn.RemoteAddr())
+				p.logger.Warn("Error reading PDU", "error", err, "remote_addr", p.conn.RemoteAddr())
 			}
 			break
 		}
@@ -246,7 +251,7 @@ func (p *Layer) readPDU() (*PDU, error) {
 
 // handlePDU routes PDUs to appropriate handlers
 func (p *Layer) handlePDU(pdu *PDU) error {
-	slog.Debug("Received PDU", "type", fmt.Sprintf("0x%02x", pdu.Type), "length", pdu.Length)
+	p.logger.Debug("Received PDU", "type", fmt.Sprintf("0x%02x", pdu.Type), "length", pdu.Length)
 
 	switch pdu.Type {
 	case TypePDataTF:
@@ -254,13 +259,13 @@ func (p *Layer) handlePDU(pdu *PDU) error {
 	case TypeReleaseRQ:
 		return p.handleReleaseRequest()
 	case TypeReleaseRP:
-		slog.Debug("Received A-RELEASE-RP")
+		p.logger.Debug("Received A-RELEASE-RP")
 		return io.EOF
 	case TypeAbort:
-		slog.Info("Received A-ABORT")
+		p.logger.Info("Received A-ABORT")
 		return io.EOF
 	default:
-		slog.Warn("Unhandled PDU type", "type", fmt.Sprintf("0x%02x", pdu.Type))
+		p.logger.Warn("Unhandled PDU type", "type", fmt.Sprintf("0x%02x", pdu.Type))
 		return nil
 	}
 }
@@ -281,7 +286,7 @@ func (p *Layer) handleAssociationPhase() error {
 
 // handleAssociateRequest processes A-ASSOCIATE-RQ and sends A-ASSOCIATE-AC
 func (p *Layer) handleAssociateRequest(pdu *PDU) error {
-	slog.Debug("Processing A-ASSOCIATE-RQ")
+	p.logger.Debug("Processing A-ASSOCIATE-RQ")
 
 	// Initialize association context with default values (will be updated by parsing)
 	p.associationCtx = &AssociationContext{
@@ -293,7 +298,7 @@ func (p *Layer) handleAssociateRequest(pdu *PDU) error {
 
 	// Parse the incoming association request to get the presentation contexts
 	if err := p.parseAssociationRequest(pdu); err != nil {
-		slog.Debug("Using default presentation contexts", "reason", err)
+		p.logger.Debug("Using default presentation contexts", "reason", err)
 		// Fall back to accepting common contexts
 	}
 
@@ -308,13 +313,13 @@ func (p *Layer) handleAssociateRequest(pdu *PDU) error {
 		return fmt.Errorf("failed to send A-ASSOCIATE-AC: %v", err)
 	}
 
-	slog.Debug("Sent A-ASSOCIATE-AC")
+	p.logger.Debug("Sent A-ASSOCIATE-AC")
 	return nil
 }
 
 // handlePDataTF processes P-DATA-TF PDUs and forwards to DIMSE layer
 func (p *Layer) handlePDataTF(pdu *PDU) error {
-	slog.Debug("Processing P-DATA-TF")
+	p.logger.Debug("Processing P-DATA-TF")
 
 	// Extract PDV from P-DATA-TF
 	if len(pdu.Data) < 6 {
@@ -336,7 +341,7 @@ func (p *Layer) handlePDataTF(pdu *PDU) error {
 	msgCtrlHeader := pdvData[1]
 	dimseData := pdvData[2:]
 
-	slog.Debug("Processing DIMSE message",
+	p.logger.Debug("Processing DIMSE message",
 		"presentation_context_id", presContextID,
 		"message_control_header", fmt.Sprintf("0x%02x", msgCtrlHeader))
 
@@ -346,7 +351,7 @@ func (p *Layer) handlePDataTF(pdu *PDU) error {
 
 // handleReleaseRequest processes A-RELEASE-RQ and sends A-RELEASE-RP
 func (p *Layer) handleReleaseRequest() error {
-	slog.Debug("Processing A-RELEASE-RQ")
+	p.logger.Debug("Processing A-RELEASE-RQ")
 
 	// Send A-RELEASE-RP
 	response := []byte{0x06, 0x00, 0x00, 0x00, 0x00, 0x04, 0x00, 0x00, 0x00, 0x00}
@@ -355,7 +360,7 @@ func (p *Layer) handleReleaseRequest() error {
 		return fmt.Errorf("failed to send A-RELEASE-RP: %v", err)
 	}
 
-	slog.Debug("Sent A-RELEASE-RP")
+	p.logger.Debug("Sent A-RELEASE-RP")
 	return io.EOF
 }
 
@@ -520,7 +525,7 @@ func (p *Layer) createAssociateAccept() []byte {
 
 // parseAssociationRequest parses an A-ASSOCIATE-RQ PDU to extract presentation contexts and AE titles
 func (p *Layer) parseAssociationRequest(pdu *PDU) error {
-	slog.Debug("Parsing association request", "pdu_length", len(pdu.Data))
+	p.logger.Debug("Parsing association request", "pdu_length", len(pdu.Data))
 
 	if len(pdu.Data) < 68 { // Minimum size for a basic association request
 		return fmt.Errorf("association request too short")
@@ -552,7 +557,7 @@ func (p *Layer) parseAssociationRequest(pdu *PDU) error {
 		p.associationCtx.PresentationCtxs = make(map[byte]*PresentationContext)
 	}
 
-	slog.Info("Extracted AE titles from association request",
+	p.logger.Info("Extracted AE titles from association request",
 		"calling_ae", callingAE,
 		"called_ae", calledAE)
 
@@ -577,17 +582,17 @@ func (p *Layer) parseAssociationRequest(pdu *PDU) error {
 		}
 		itemData := data[valueStart:valueEnd]
 
-		slog.Debug("Found association item", "type", fmt.Sprintf("0x%02x", itemType), "length", itemLength)
+		p.logger.Debug("Found association item", "type", fmt.Sprintf("0x%02x", itemType), "length", itemLength)
 
 		switch itemType {
 		case 0x10: // Application Context
-			slog.Debug("Found application context item")
+			p.logger.Debug("Found application context item")
 		case 0x20: // Presentation Context
-			slog.Debug("Found presentation context item")
+			p.logger.Debug("Found presentation context item")
 			proposedContexts++
 			ctx, err := parsePresentationContext(itemData)
 			if err != nil {
-				slog.Warn("Failed to parse presentation context", "error", err)
+				p.logger.Warn("Failed to parse presentation context", "error", err)
 			} else if p.associationCtx != nil {
 				p.associationCtx.PresentationCtxs[ctx.ID] = ctx
 				if ctx.Result == presentationResultAcceptance {
@@ -595,9 +600,9 @@ func (p *Layer) parseAssociationRequest(pdu *PDU) error {
 				}
 			}
 		case 0x50: // User Information
-			slog.Debug("Found user information item")
+			p.logger.Debug("Found user information item")
 			if maxPDULength, err := parseUserInformation(itemData); err != nil {
-				slog.Warn("Failed to parse user information", "error", err)
+				p.logger.Warn("Failed to parse user information", "error", err)
 			} else if maxPDULength > 0 && p.associationCtx != nil {
 				p.associationCtx.MaxPDULength = maxPDULength
 			}
@@ -607,9 +612,9 @@ func (p *Layer) parseAssociationRequest(pdu *PDU) error {
 	}
 
 	if proposedContexts == 0 {
-		slog.Warn("No presentation contexts found in association request")
+		p.logger.Warn("No presentation contexts found in association request")
 	} else {
-		slog.Info("Negotiated presentation contexts",
+		p.logger.Info("Negotiated presentation contexts",
 			"proposed", proposedContexts,
 			"accepted", acceptedContexts,
 			"max_pdu_length", p.associationCtx.MaxPDULength)
@@ -620,7 +625,7 @@ func (p *Layer) parseAssociationRequest(pdu *PDU) error {
 
 // addDefaultPresentationContexts adds the standard presentation contexts
 func (p *Layer) addDefaultPresentationContexts() {
-	slog.Debug("Adding default presentation contexts")
+	p.logger.Debug("Adding default presentation contexts")
 
 	// Verification SOP Class (C-ECHO)
 	p.associationCtx.PresentationCtxs[1] = &PresentationContext{

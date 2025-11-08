@@ -41,6 +41,7 @@ type Service struct {
 	commandData []byte
 	datasetData []byte
 	currentMsg  *types.Message
+	logger      *slog.Logger
 }
 
 // responseHandler implements ResponseSender for streaming responses
@@ -56,9 +57,13 @@ func (r *responseHandler) SendResponse(msg *types.Message, data []byte) error {
 }
 
 // NewService creates a new DIMSE service with a handler
-func NewService(handler interfaces.ServiceHandler) *Service {
+func NewService(handler interfaces.ServiceHandler, logger *slog.Logger) *Service {
+	if logger == nil {
+		logger = slog.Default()
+	}
 	return &Service{
 		handler: handler,
+		logger:  logger,
 	}
 }
 
@@ -67,7 +72,7 @@ func (d *Service) HandleDIMSEMessage(presContextID byte, msgCtrlHeader byte, dat
 	// Create context for this message handling
 	ctx := context.Background()
 
-	slog.Debug("Processing DIMSE message",
+	d.logger.Debug("Processing DIMSE message",
 		"context_id", presContextID,
 		"control_header", fmt.Sprintf("0x%02x", msgCtrlHeader))
 
@@ -82,11 +87,11 @@ func (d *Service) HandleDIMSEMessage(presContextID byte, msgCtrlHeader byte, dat
 
 	if isCommand {
 		// This is command data
-		slog.Debug("Received command data", "size_bytes", len(data))
+		d.logger.Debug("Received command data", "size_bytes", len(data))
 		if isLastFragment {
 			// Complete command in one fragment
 			d.commandData = data
-			msg, err := parseDIMSECommand(data)
+			msg, err := parseDIMSECommand(data, d.logger)
 			if err != nil {
 				return fmt.Errorf("failed to parse DIMSE command: %v", err)
 			}
@@ -102,7 +107,7 @@ func (d *Service) HandleDIMSEMessage(presContextID byte, msgCtrlHeader byte, dat
 		}
 	} else {
 		// This is dataset data
-		slog.Debug("Received dataset data", "size_bytes", len(data))
+		d.logger.Debug("Received dataset data", "size_bytes", len(data))
 		if isLastFragment {
 			// Complete dataset received
 			d.datasetData = append(d.datasetData, data...)
@@ -122,14 +127,14 @@ func (d *Service) processCompleteMessage(ctx context.Context, presContextID byte
 		return fmt.Errorf("no current message to process")
 	}
 
-	slog.InfoContext(ctx, "Processing complete DIMSE message",
+	d.logger.InfoContext(ctx, "Processing complete DIMSE message",
 		"command_field", fmt.Sprintf("0x%04x", d.currentMsg.CommandField),
 		"message_id", d.currentMsg.MessageID,
 		"dataset_size", len(d.datasetData))
 
 	// Check if handler supports streaming (for multi-response operations like C-FIND)
 	if streamingHandler, ok := d.handler.(interfaces.StreamingServiceHandler); ok {
-		slog.DebugContext(ctx, "Using streaming handler for multi-response operation")
+		d.logger.DebugContext(ctx, "Using streaming handler for multi-response operation")
 		responder := &responseHandler{
 			service:       d,
 			presContextID: presContextID,
