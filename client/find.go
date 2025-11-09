@@ -2,7 +2,6 @@ package client
 
 import (
 	"fmt"
-	"log/slog"
 
 	"github.com/caio-sobreiro/dicomnet/dicom"
 	"github.com/caio-sobreiro/dicomnet/dimse"
@@ -64,21 +63,21 @@ func (a *Association) SendCFind(req *CFindRequest) ([]*CFindResponse, error) {
 		AffectedSOPClassUID: sopClass,
 	}
 
-	commandData, err := encodeCommand(command)
+	commandData, err := dimse.EncodeCommand(command)
 	if err != nil {
 		return nil, fmt.Errorf("failed to encode C-FIND command: %w", err)
 	}
 
 	datasetData := req.Dataset.EncodeDataset()
 
-	if err := a.sendDIMSEMessage(presContextID, commandData, datasetData); err != nil {
+	if err := dimse.SendDIMSEMessage(a.conn, presContextID, a.maxPDULength, commandData, datasetData); err != nil {
 		return nil, fmt.Errorf("failed to send C-FIND request: %w", err)
 	}
 
 	var responses []*CFindResponse
 
 	for {
-		msg, data, err := a.receiveDIMSEMessage()
+		msg, data, err := dimse.ReceiveDIMSEMessage(a.conn)
 		if err != nil {
 			return nil, err
 		}
@@ -91,7 +90,7 @@ func (a *Association) SendCFind(req *CFindRequest) ([]*CFindResponse, error) {
 		if len(data) > 0 {
 			dataset, err = dicom.ParseDataset(data)
 			if err != nil {
-				slog.Warn("Failed to parse C-FIND response dataset",
+				a.logger.Warn("Failed to parse C-FIND response dataset",
 					"error", err,
 					"message_id", msg.MessageIDBeingRespondedTo,
 					"status", fmt.Sprintf("0x%04X", msg.Status))

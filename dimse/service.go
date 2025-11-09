@@ -20,6 +20,7 @@ const (
 	CMoveRSP  = 0x8021
 	CEchoRQ   = 0x0030
 	CEchoRSP  = 0x8030
+	CCancelRQ = 0x0FFF
 )
 
 // Status codes
@@ -220,6 +221,43 @@ func (d *Service) createDIMSECommand(msg *types.Message) []byte {
 	status := make([]byte, 2)
 	binary.LittleEndian.PutUint16(status, msg.Status)
 	elements = append(elements, status...)
+
+	// C-MOVE response counters (optional, only for C-MOVE-RSP)
+	if msg.NumberOfRemainingSuboperations != nil {
+		// Number of Remaining Sub-operations (0000,1020)
+		elements = append(elements, 0x00, 0x00, 0x20, 0x10) // Tag
+		elements = append(elements, 0x02, 0x00, 0x00, 0x00) // Length = 2
+		remaining := make([]byte, 2)
+		binary.LittleEndian.PutUint16(remaining, *msg.NumberOfRemainingSuboperations)
+		elements = append(elements, remaining...)
+	}
+
+	if msg.NumberOfCompletedSuboperations != nil {
+		// Number of Completed Sub-operations (0000,1021)
+		elements = append(elements, 0x00, 0x00, 0x21, 0x10) // Tag
+		elements = append(elements, 0x02, 0x00, 0x00, 0x00) // Length = 2
+		completed := make([]byte, 2)
+		binary.LittleEndian.PutUint16(completed, *msg.NumberOfCompletedSuboperations)
+		elements = append(elements, completed...)
+	}
+
+	if msg.NumberOfFailedSuboperations != nil {
+		// Number of Failed Sub-operations (0000,1022)
+		elements = append(elements, 0x00, 0x00, 0x22, 0x10) // Tag
+		elements = append(elements, 0x02, 0x00, 0x00, 0x00) // Length = 2
+		failed := make([]byte, 2)
+		binary.LittleEndian.PutUint16(failed, *msg.NumberOfFailedSuboperations)
+		elements = append(elements, failed...)
+	}
+
+	if msg.NumberOfWarningSuboperations != nil {
+		// Number of Warning Sub-operations (0000,1023)
+		elements = append(elements, 0x00, 0x00, 0x23, 0x10) // Tag
+		elements = append(elements, 0x02, 0x00, 0x00, 0x00) // Length = 2
+		warning := make([]byte, 2)
+		binary.LittleEndian.PutUint16(warning, *msg.NumberOfWarningSuboperations)
+		elements = append(elements, warning...)
+	}
 
 	// Add Group Length (0000,0000) at the beginning
 	groupLengthValue := make([]byte, 4)

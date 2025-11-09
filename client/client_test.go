@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/binary"
 	"io"
+	"log/slog"
 	"net"
 	"testing"
 	"time"
@@ -63,9 +64,9 @@ func TestEncodeCommand(t *testing.T) {
 		AffectedSOPInstanceUID: "1.2.3.4.5",
 	}
 
-	encoded, err := encodeCommand(msg)
+	encoded, err := dimse.EncodeCommand(msg)
 	if err != nil {
-		t.Fatalf("encodeCommand failed: %v", err)
+		t.Fatalf("dimse.EncodeCommand failed: %v", err)
 	}
 
 	if len(encoded) == 0 {
@@ -190,6 +191,7 @@ func TestSendPDataTF_Fragmentation(t *testing.T) {
 		calledAETitle:    "TEST_SCP",
 		maxPDULength:     200, // Small size to force fragmentation
 		presentationCtxs: make(map[byte]*PresentationContext),
+		logger:           slog.Default(),
 	}
 
 	// Create data larger than maxPDULength
@@ -198,9 +200,9 @@ func TestSendPDataTF_Fragmentation(t *testing.T) {
 		data[i] = byte(i % 256)
 	}
 
-	err := assoc.sendPDataTF(1, data, false, true)
+	err := dimse.SendPDataTF(assoc.conn, 1, assoc.maxPDULength, data, false, true)
 	if err != nil {
-		t.Fatalf("sendPDataTF failed: %v", err)
+		t.Fatalf("dimse.SendPDataTF failed: %v", err)
 	}
 
 	written := conn.writeBuf.Bytes()
@@ -238,14 +240,15 @@ func TestSendDIMSEMessage(t *testing.T) {
 		calledAETitle:    "TEST_SCP",
 		maxPDULength:     16384,
 		presentationCtxs: make(map[byte]*PresentationContext),
+		logger:           slog.Default(),
 	}
 
 	commandData := []byte{0x01, 0x02, 0x03, 0x04}
 	datasetData := []byte{0x05, 0x06, 0x07, 0x08, 0x09, 0x0A}
 
-	err := assoc.sendDIMSEMessage(1, commandData, datasetData)
+	err := dimse.SendDIMSEMessage(assoc.conn, 1, assoc.maxPDULength, commandData, datasetData)
 	if err != nil {
-		t.Fatalf("sendDIMSEMessage failed: %v", err)
+		t.Fatalf("dimse.SendDIMSEMessage failed: %v", err)
 	}
 
 	written := conn.writeBuf.Bytes()
@@ -286,6 +289,7 @@ func TestReceiveCStoreResponse_Abort(t *testing.T) {
 		calledAETitle:    "TEST_SCP",
 		maxPDULength:     16384,
 		presentationCtxs: make(map[byte]*PresentationContext),
+		logger:           slog.Default(),
 	}
 
 	// Build A-ABORT PDU
@@ -308,7 +312,7 @@ func TestReceiveCStoreResponse_Abort(t *testing.T) {
 	conn.readBuf.Write(abortPDU.Bytes())
 
 	// Receive response - should return error
-	_, err := assoc.receiveCStoreResponse()
+	_, _, err := dimse.ReceiveDIMSEMessage(assoc.conn)
 
 	if err == nil {
 		t.Fatal("Expected error for A-ABORT, got nil")
@@ -350,7 +354,7 @@ func TestAppendImplicitElement(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			buf := make([]byte, 0)
-			result := appendImplicitElement(buf, tt.group, tt.element, tt.value)
+			result := dimse.AppendImplicitElement(buf, tt.group, tt.element, tt.value)
 
 			if len(result) < 8 {
 				t.Fatalf("Result too short: %d bytes", len(result))
@@ -413,6 +417,7 @@ func TestClose(t *testing.T) {
 		calledAETitle:    "TEST_SCP",
 		maxPDULength:     16384,
 		presentationCtxs: make(map[byte]*PresentationContext),
+		logger:           slog.Default(),
 	}
 
 	err := assoc.Close()

@@ -34,16 +34,16 @@ func (a *Association) SendCEcho(messageID uint16) (*CEchoResponse, error) {
 		AffectedSOPClassUID: verificationSOPClassUID,
 	}
 
-	commandData, err := encodeCommand(command)
+	commandData, err := dimse.EncodeCommand(command)
 	if err != nil {
 		return nil, fmt.Errorf("failed to encode C-ECHO command: %w", err)
 	}
 
-	if err := a.sendDIMSEMessage(presContextID, commandData, nil); err != nil {
+	if err := dimse.SendDIMSEMessage(a.conn, presContextID, a.maxPDULength, commandData, nil); err != nil {
 		return nil, fmt.Errorf("failed to send C-ECHO request: %w", err)
 	}
 
-	msg, _, err := a.receiveDIMSEMessage()
+	msg, _, err := dimse.ReceiveDIMSEMessage(a.conn)
 	if err != nil {
 		return nil, err
 	}
