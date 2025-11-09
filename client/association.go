@@ -7,17 +7,20 @@ import (
 	"log/slog"
 	"net"
 	"strings"
+	"time"
 
 	"github.com/caio-sobreiro/dicomnet/pdu"
 )
 
 // Association represents a client-side DICOM association
 type Association struct {
-	conn             net.Conn
-	callingAETitle   string
-	calledAETitle    string
-	maxPDULength     uint32
-	presentationCtxs map[byte]*PresentationContext
+	conn                      net.Conn
+	callingAETitle            string
+	calledAETitle             string
+	maxPDULength              uint32
+	presentationCtxs          map[byte]*PresentationContext
+	logger                    *slog.Logger
+	preferredTransferSyntaxes []string
 }
 
 // PresentationContext holds negotiated presentation context info
@@ -30,9 +33,14 @@ type PresentationContext struct {
 
 // Config holds client configuration
 type Config struct {
-	CallingAETitle string
-	CalledAETitle  string
-	MaxPDULength   uint32
+	CallingAETitle            string
+	CalledAETitle             string
+	MaxPDULength              uint32
+	ConnectTimeout            time.Duration // Timeout for establishing connection (default: 30s)
+	ReadTimeout               time.Duration // Timeout for read operations (default: 60s)
+	WriteTimeout              time.Duration // Timeout for write operations (default: 60s)
+	Logger                    *slog.Logger  // Logger for the association (default: slog.Default())
+	PreferredTransferSyntaxes []string      // Transfer syntaxes to propose (default: Explicit VR, Implicit VR)
 }
 
 // Connect establishes a DICOM association with a remote SCP
@@ -40,19 +48,58 @@ func Connect(address string, config Config) (*Association, error) {
 	if config.MaxPDULength == 0 {
 		config.MaxPDULength = 16384 // Default 16KB
 	}
+	if config.ConnectTimeout == 0 {
+		config.ConnectTimeout = 30 * time.Second
+	}
+	if config.ReadTimeout == 0 {
+		config.ReadTimeout = 60 * time.Second
+	}
+	if config.WriteTimeout == 0 {
+		config.WriteTimeout = 60 * time.Second
+	}
 
-	// Establish TCP connection
-	conn, err := net.Dial("tcp", address)
+	// Establish TCP connection with timeout
+	dialer := &net.Dialer{
+		Timeout: config.ConnectTimeout,
+	}
+	conn, err := dialer.Dial("tcp", address)
 	if err != nil {
 		return nil, fmt.Errorf("failed to connect: %w", err)
 	}
 
+	// Set initial read/write timeouts
+	if err := conn.SetReadDeadline(time.Now().Add(config.ReadTimeout)); err != nil {
+		conn.Close()
+		return nil, fmt.Errorf("failed to set read deadline: %w", err)
+	}
+	if err := conn.SetWriteDeadline(time.Now().Add(config.WriteTimeout)); err != nil {
+		conn.Close()
+		return nil, fmt.Errorf("failed to set write deadline: %w", err)
+	}
+
+	// Set logger
+	logger := config.Logger
+	if logger == nil {
+		logger = slog.Default()
+	}
+
+	// Set default transfer syntaxes if not provided
+	transferSyntaxes := config.PreferredTransferSyntaxes
+	if len(transferSyntaxes) == 0 {
+		transferSyntaxes = []string{
+			"1.2.840.10008.1.2.1", // Explicit VR Little Endian (default)
+			"1.2.840.10008.1.2",   // Implicit VR Little Endian
+		}
+	}
+
 	assoc := &Association{
-		conn:             conn,
-		callingAETitle:   config.CallingAETitle,
-		calledAETitle:    config.CalledAETitle,
-		maxPDULength:     config.MaxPDULength,
-		presentationCtxs: make(map[byte]*PresentationContext),
+		conn:                      conn,
+		callingAETitle:            config.CallingAETitle,
+		calledAETitle:             config.CalledAETitle,
+		maxPDULength:              config.MaxPDULength,
+		presentationCtxs:          make(map[byte]*PresentationContext),
+		logger:                    logger,
+		preferredTransferSyntaxes: transferSyntaxes,
 	}
 
 	// Send association request
@@ -67,7 +114,7 @@ func Connect(address string, config Config) (*Association, error) {
 		return nil, fmt.Errorf("failed to receive A-ASSOCIATE-AC: %w", err)
 	}
 
-	slog.Info("DICOM association established",
+	logger.Info("DICOM association established",
 		"remote_addr", address,
 		"calling_ae", config.CallingAETitle,
 		"called_ae", config.CalledAETitle)
@@ -79,7 +126,7 @@ func Connect(address string, config Config) (*Association, error) {
 func (a *Association) Close() error {
 	// Send release request
 	if err := a.sendReleaseRQ(); err != nil {
-		slog.Warn("Failed to send release request", "error", err)
+		a.logger.Warn("Failed to send release request", "error", err)
 	}
 
 	// Wait for release response (with timeout handled by TCP)
@@ -177,13 +224,8 @@ func (a *Association) addPresentationContext(buf []byte, contextID byte, abstrac
 	buf = append(buf, 0x00, byte(len(abstractSyntax))) // Length
 	buf = append(buf, []byte(abstractSyntax)...)
 
-	// Transfer Syntax Sub-Items - propose multiple
-	transferSyntaxes := []string{
-		"1.2.840.10008.1.2.1", // Explicit VR Little Endian
-		"1.2.840.10008.1.2",   // Implicit VR Little Endian
-	}
-
-	for _, ts := range transferSyntaxes {
+	// Transfer Syntax Sub-Items - use configured transfer syntaxes (order matters - first is preferred)
+	for _, ts := range a.preferredTransferSyntaxes {
 		buf = append(buf, 0x40)                // Item type
 		buf = append(buf, 0x00)                // Reserved
 		buf = append(buf, 0x00, byte(len(ts))) // Length
@@ -309,7 +351,7 @@ func (a *Association) receiveAssociateAC() error {
 				if pc.Accepted && transferSyntax != "" {
 					pc.TransferSyntax = transferSyntax
 				}
-				slog.Debug("Presentation context negotiation",
+				a.logger.Debug("Presentation context negotiation",
 					"context_id", contextID,
 					"abstract_syntax", pc.AbstractSyntax,
 					"result", result,
