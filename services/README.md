@@ -52,6 +52,31 @@ response, data, err := registry.HandleDIMSE(ctx, msg, data)
 err := registry.HandleDIMSEStreaming(ctx, msg, data, responder)
 ```
 
+### Response Builders
+
+Convenient builders for creating standard DIMSE response messages with proper fields and status codes.
+
+**Usage:**
+```go
+import (
+    "github.com/caio-sobreiro/dicomnet/services"
+    "github.com/caio-sobreiro/dicomnet/dimse"
+)
+
+// Quick helpers for common responses
+echoResp := services.NewCEchoResponse(request, dimse.StatusSuccess)
+findPending := services.NewCFindPendingResponse(request)
+findSuccess := services.NewCFindSuccessResponse(request)
+storeResp := services.NewCStoreResponse(request, dimse.StatusSuccess)
+
+// Builder for more control
+builder := services.NewResponseBuilder(request)
+moveResp := builder.CMoveResponse(
+    dimse.StatusPending,
+    &completed, &failed, &warning, &remaining,
+)
+```
+
 ## Migration from Local Implementations
 
 The C-ECHO service has been moved from application-specific implementations to this reusable package. To migrate:

@@ -11,10 +11,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Services package** (`services/`) with reusable DICOM service implementations
   - `EchoService` - Complete C-ECHO verification service implementation
   - `Registry` - Generic service registry/router for dispatching DIMSE messages to handlers
+  - `ResponseBuilder` and helper functions for creating standard DIMSE responses
+    - `NewCEchoResponse`, `NewCFindPendingResponse`, `NewCFindSuccessResponse`, `NewCFindErrorResponse`
+    - `NewCMoveSuccessResponse`, `NewCMovePendingResponse`, `NewCMoveErrorResponse`
+    - `NewCStoreResponse`
   - Support for both single-response and streaming (multi-response) operations
   - Dynamic handler registration/unregistration
-  - Comprehensive test coverage with integration tests
+  - Comprehensive test coverage (34 tests)
   - Package documentation (README.md)
+- **DICOM Part 10 utilities** (`dicom/part10.go`)
+  - `StripPart10Header` - Extracts dataset from DICOM Part 10 files
+  - `HasPart10Header` - Checks if data contains Part 10 header
+  - Useful for preparing datasets for DIMSE operations
 - `CreateErrorResponse` utility function for standardized error responses
 
 ## [0.3.0] - 2025-11-09
