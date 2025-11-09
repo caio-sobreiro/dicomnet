@@ -7,6 +7,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.0] - 2025-11-09
+
+### Added
+- **C-GET implementation** (both SCU and SCP) for retrieving instances on same association
+  - Client-side: `client/get.go` with `SendCGet()` method
+  - Server-side: `dimse/service.go` with `CGetResponder` interface for C-STORE sub-operations
+  - Server automatically detects C-GET requests and provides appropriate responder
+  - Sub-operation counter tracking (remaining, completed, failed, warning)
+- C-GET SOP Class support in server:
+  - Patient Root Query/Retrieve Information Model - GET (1.2.840.10008.5.1.4.1.2.1.3)
+  - Study Root Query/Retrieve Information Model - GET (1.2.840.10008.5.1.4.1.2.2.3)
+  - Patient/Study Only Query/Retrieve Information Model - GET (1.2.840.10008.5.1.4.1.2.3.3)
+- Enhanced `dimse.createDIMSECommand()` to support:
+  - MessageID field (0000,0110) for requests
+  - AffectedSOPInstanceUID field (0000,1000) for C-STORE operations
+- C-GET handler in sample_server with `handleCGetStreaming()` implementation
+- Documentation updates with C-GET vs C-MOVE comparison table in README
+
+### Changed
+- Enhanced test helper `buildCommandDataset()` to support sub-operation counter fields
+- Updated README with C-GET feature and architectural differences from C-MOVE
+
+### Testing
+- Comprehensive C-GET client tests with sub-operation counter validation
+- Verified with Orthanc PACS - successfully retrieved 3 synthetic instances via C-GET
+
+## [0.3.1] - 2025-11-09
+
 ### Added
 - **Comprehensive SOP Class support** with 150+ SOP Class UID constants in `types/sopclass.go`
   - Storage SOP Classes: CT, MR, US, NM, PET, RT, CR, DX, XA, visible light, ophthalmic, etc.
@@ -131,6 +159,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Basic dataset parsing and encoding
 - Unit tests for core functionality
 
+[0.4.0]: https://github.com/caio-sobreiro/dicomnet/releases/tag/v0.4.0
+[0.3.1]: https://github.com/caio-sobreiro/dicomnet/releases/tag/v0.3.1
 [0.3.0]: https://github.com/caio-sobreiro/dicomnet/releases/tag/v0.3.0
 [0.2.1]: https://github.com/caio-sobreiro/dicomnet/releases/tag/v0.2.1
 [0.2.0]: https://github.com/caio-sobreiro/dicomnet/releases/tag/v0.2.0
