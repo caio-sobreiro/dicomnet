@@ -193,11 +193,14 @@ func TestParseDataset(t *testing.T) {
 		{
 			name: "Single element",
 			data: func() []byte {
+				// Explicit VR: Tag (4) + VR (2) + Length (2) + Value
 				// Tag 0010,0010 (Patient Name)
 				data := make([]byte, 8)
-				binary.LittleEndian.PutUint16(data[0:2], 0x0010)
-				binary.LittleEndian.PutUint16(data[2:4], 0x0010)
-				binary.LittleEndian.PutUint32(data[4:8], 8) // Length
+				binary.LittleEndian.PutUint16(data[0:2], 0x0010) // Group
+				binary.LittleEndian.PutUint16(data[2:4], 0x0010) // Element
+				data[4] = 'P'                                    // VR
+				data[5] = 'N'
+				binary.LittleEndian.PutUint16(data[6:8], 8) // Length (2 bytes for short VR)
 				data = append(data, []byte("DOE^JOHN")...)
 				return data
 			}(),
@@ -214,21 +217,26 @@ func TestParseDataset(t *testing.T) {
 			data: func() []byte {
 				var data []byte
 
+				// Explicit VR: Tag (4) + VR (2) + Length (2) + Value
 				// Tag 0010,0010 (Patient Name)
 				tag1 := make([]byte, 8)
-				binary.LittleEndian.PutUint16(tag1[0:2], 0x0010)
-				binary.LittleEndian.PutUint16(tag1[2:4], 0x0010)
+				binary.LittleEndian.PutUint16(tag1[0:2], 0x0010) // Group
+				binary.LittleEndian.PutUint16(tag1[2:4], 0x0010) // Element
+				tag1[4] = 'P'                                    // VR
+				tag1[5] = 'N'
 				name := []byte("DOE^JOHN")
-				binary.LittleEndian.PutUint32(tag1[4:8], uint32(len(name)))
+				binary.LittleEndian.PutUint16(tag1[6:8], uint16(len(name))) // Length (2 bytes)
 				data = append(data, tag1...)
 				data = append(data, name...)
 
 				// Tag 0010,0020 (Patient ID)
 				tag2 := make([]byte, 8)
-				binary.LittleEndian.PutUint16(tag2[0:2], 0x0010)
-				binary.LittleEndian.PutUint16(tag2[2:4], 0x0020)
+				binary.LittleEndian.PutUint16(tag2[0:2], 0x0010) // Group
+				binary.LittleEndian.PutUint16(tag2[2:4], 0x0020) // Element
+				tag2[4] = 'L'                                    // VR
+				tag2[5] = 'O'
 				id := []byte("12345")
-				binary.LittleEndian.PutUint32(tag2[4:8], uint32(len(id)))
+				binary.LittleEndian.PutUint16(tag2[6:8], uint16(len(id))) // Length (2 bytes)
 				data = append(data, tag2...)
 				data = append(data, id...)
 
@@ -249,11 +257,14 @@ func TestParseDataset(t *testing.T) {
 		{
 			name: "Element with odd length (requires padding)",
 			data: func() []byte {
+				// Explicit VR: Tag (4) + VR (2) + Length (2) + Value
 				// Tag 0010,0010 (Patient Name) with 7 bytes (odd)
 				data := make([]byte, 8)
-				binary.LittleEndian.PutUint16(data[0:2], 0x0010)
-				binary.LittleEndian.PutUint16(data[2:4], 0x0010)
-				binary.LittleEndian.PutUint32(data[4:8], 7) // Odd length
+				binary.LittleEndian.PutUint16(data[0:2], 0x0010) // Group
+				binary.LittleEndian.PutUint16(data[2:4], 0x0010) // Element
+				data[4] = 'P'                                    // VR
+				data[5] = 'N'
+				binary.LittleEndian.PutUint16(data[6:8], 7) // Odd length (2 bytes)
 				data = append(data, []byte("JOHNSON")...)
 				data = append(data, 0x20) // Padding byte
 				return data
@@ -311,6 +322,7 @@ func TestDataset_EncodeDataset(t *testing.T) {
 				return ds
 			},
 			verify: func(t *testing.T, data []byte) {
+				// Explicit VR format: Tag (4) + VR (2) + Length (2) + Value
 				if len(data) < 8 {
 					t.Fatalf("Data too short: %d bytes", len(data))
 				}
@@ -322,8 +334,14 @@ func TestDataset_EncodeDataset(t *testing.T) {
 					t.Errorf("Expected tag (0010,0010), got (%04x,%04x)", group, element)
 				}
 
-				// Verify length
-				length := binary.LittleEndian.Uint32(data[4:8])
+				// Verify VR
+				vr := string(data[4:6])
+				if vr != "PN" {
+					t.Errorf("Expected VR PN, got %s", vr)
+				}
+
+				// Verify length (2 bytes for short VR in Explicit VR)
+				length := binary.LittleEndian.Uint16(data[6:8])
 				if length != 8 {
 					t.Errorf("Expected length 8, got %d", length)
 				}
@@ -343,8 +361,9 @@ func TestDataset_EncodeDataset(t *testing.T) {
 				return ds
 			},
 			verify: func(t *testing.T, data []byte) {
+				// Explicit VR: Tag (4) + VR (2) + Length (2) + Value
 				// Verify length is padded to even
-				length := binary.LittleEndian.Uint32(data[4:8])
+				length := binary.LittleEndian.Uint16(data[6:8])
 				if length%2 != 0 {
 					t.Errorf("Expected even length, got %d", length)
 				}
@@ -364,6 +383,7 @@ func TestDataset_EncodeDataset(t *testing.T) {
 				return ds
 			},
 			verify: func(t *testing.T, data []byte) {
+				// Explicit VR format
 				// Verify first tag is smallest (0010,0010)
 				group := binary.LittleEndian.Uint16(data[0:2])
 				element := binary.LittleEndian.Uint16(data[2:4])

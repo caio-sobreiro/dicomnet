@@ -129,39 +129,61 @@ func ParseDataset(data []byte) (*Dataset, error) {
 	}
 
 	offset := 0
-	for offset < len(data)-8 {
+	for offset < len(data) {
+		// Need at least 8 bytes for tag + VR + length
 		if offset+8 > len(data) {
 			break
 		}
 
-		// Read tag
+		// Read tag (4 bytes)
 		group := binary.LittleEndian.Uint16(data[offset : offset+2])
 		element := binary.LittleEndian.Uint16(data[offset+2 : offset+4])
-		length := binary.LittleEndian.Uint32(data[offset+4 : offset+8])
-
 		tag := Tag{Group: group, Element: element}
 
+		// Read VR (2 bytes)
+		vr := string(data[offset+4 : offset+6])
+
+		var length uint32
+		var valueOffset int
+
+		// Determine if this is a short or long VR
+		// Short VRs: AE, AS, AT, CS, DA, DS, DT, FL, FD, IS, LO, LT, PN, SH, SL, SS, ST, TM, UI, UL, US
+		// Long VRs: OB, OD, OF, OL, OW, SQ, UC, UR, UT, UN, OV, SV, UV
+		isLongVR := vr == "OB" || vr == "OD" || vr == "OF" || vr == "OL" || vr == "OW" ||
+			vr == "SQ" || vr == "UC" || vr == "UR" || vr == "UT" || vr == "UN" ||
+			vr == "OV" || vr == "SV" || vr == "UV"
+
+		if isLongVR {
+			// Long VR: Tag (4) + VR (2) + Reserved (2) + Length (4) = 12 bytes header
+			if offset+12 > len(data) {
+				break
+			}
+			// Skip 2 reserved bytes
+			length = binary.LittleEndian.Uint32(data[offset+8 : offset+12])
+			valueOffset = offset + 12
+		} else {
+			// Short VR: Tag (4) + VR (2) + Length (2) = 8 bytes header
+			length = uint32(binary.LittleEndian.Uint16(data[offset+6 : offset+8]))
+			valueOffset = offset + 8
+		}
+
 		// Ensure we have enough data for the value
-		if offset+8+int(length) > len(data) {
+		if valueOffset+int(length) > len(data) {
 			break
 		}
 
 		// Extract value
-		valueData := data[offset+8 : offset+8+int(length)]
+		valueData := data[valueOffset : valueOffset+int(length)]
 		value := parseElementValue(tag, valueData)
-
-		// Determine VR based on tag (simplified)
-		vr := determineVR(tag)
 
 		dataset.AddElement(tag, vr, value)
 
-		// Move to next element
-		offset += 8 + int(length)
-
-		// Handle padding
+		// Move to next element (including padding if odd length)
+		nextOffset := valueOffset + int(length)
 		if length%2 == 1 {
-			offset++
+			nextOffset++
 		}
+		offset = nextOffset
 	}
 
 	return dataset, nil
@@ -270,15 +292,18 @@ func (d *Dataset) EncodeDataset() []byte {
 		}
 	}
 
-	// Add elements in sorted tag order
+	// Add elements in sorted tag order (using Explicit VR Little Endian)
 	for _, tag := range tags {
 		element := d.Elements[tag]
 
-		// Tag
+		// Tag (4 bytes - Little Endian)
 		tagBytes := make([]byte, 4)
 		binary.LittleEndian.PutUint16(tagBytes[0:2], tag.Group)
 		binary.LittleEndian.PutUint16(tagBytes[2:4], tag.Element)
 		result = append(result, tagBytes...)
+
+		// VR (2 bytes - ASCII)
+		result = append(result, []byte(element.VR)...)
 
 		// Encode value
 		valueBytes := encodeElementValue(element)
@@ -288,10 +313,30 @@ func (d *Dataset) EncodeDataset() []byte {
 			valueBytes = append(valueBytes, 0x20) // Use space padding for text elements
 		}
 
-		// Length (now includes padding)
-		lengthBytes := make([]byte, 4)
-		binary.LittleEndian.PutUint32(lengthBytes, uint32(len(valueBytes)))
-		result = append(result, lengthBytes...)
+		// For Explicit VR, length encoding depends on VR type
+		// Short VRs (most string types): 2-byte length
+		// Long VRs (OB, OW, SQ, UN, UT): 4-byte length with 2 reserved bytes
+		isLongVR := element.VR == VR_OB || element.VR == VR_OW || element.VR == VR_SQ ||
+			element.VR == VR_UN || element.VR == VR_UT || element.VR == VR_OD ||
+			element.VR == VR_OF || element.VR == VR_OL || element.VR == VR_OV ||
+			element.VR == VR_UC || element.VR == VR_UR
+
+		if isLongVR {
+			// Long VR format: VR (2 bytes) + Reserved (2 bytes) + Length (4 bytes)
+			result = append(result, 0x00, 0x00) // Reserved bytes
+			lengthBytes := make([]byte, 4)
+			binary.LittleEndian.PutUint32(lengthBytes, uint32(len(valueBytes)))
+			result = append(result, lengthBytes...)
+		} else {
+			// Short VR format: VR (2 bytes) + Length (2 bytes)
+			if len(valueBytes) > 65535 {
+				// Value too long for short VR format - truncate or error
+				valueBytes = valueBytes[:65535]
+			}
+			lengthBytes := make([]byte, 2)
+			binary.LittleEndian.PutUint16(lengthBytes, uint16(len(valueBytes)))
+			result = append(result, lengthBytes...)
+		}
 
 		// Value (already padded)
 		result = append(result, valueBytes...)
