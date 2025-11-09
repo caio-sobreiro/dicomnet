@@ -1,0 +1,30 @@
+services:
+  sample_server:
+    image: golang:1.25
+    command: go run ./cmd/sample_server/main.go --synthetic
+    working_dir: /app
+    volumes:
+      - ./:/app
+    environment:
+      - AE_TITLE=SAMPLE_SCP
+      - PORT=4242
+
+  orthanc:
+    image: orthancteam/orthanc:25.8.1
+    ports:
+      - "8080:8042"
+    environment:
+      ORTHANC__NAME: "Workstation"
+      STONE_WEB_VIEWER_PLUGIN_ENABLED: "true"
+      DICOM_WEB_PLUGIN_ENABLED: "true"
+      ORTHANC__DICOM_PORT: 4242
+      ORTHANC__DICOM_ALWAYS_ALLOW_STORE: "true"
+      ORTHANC__DICOM_CHECK_CALLED_AET: "false"
+      VERBOSE_ENABLED: "true"
+      TRACE_ENABLED: "true"
+      ORTHANC__DICOM_MODALITIES: |
+        {
+          "SAMPLE_SCP": [ "SAMPLE_SCP", "sample_server", 4242 ]
+        }
+    depends_on:
+      - sample_server
