@@ -19,7 +19,7 @@ func createValidPart10File() []byte {
 
 	// Transfer Syntax UID (0002,0010) - using short VR format
 	data = append(data, 0x02, 0x00, 0x10, 0x00) // Tag
-	data = append(data, 'U', 'I')                // VR
+	data = append(data, 'U', 'I')               // VR
 	tsUID := "1.2.840.10008.1.2.1\x00"          // Explicit VR Little Endian (padded)
 	tsLength := make([]byte, 2)
 	binary.LittleEndian.PutUint16(tsLength, uint16(len(tsUID)))
@@ -29,7 +29,7 @@ func createValidPart10File() []byte {
 	// Dataset starts here (group > 0x0002)
 	// Patient Name (0010,0010)
 	data = append(data, 0x10, 0x00, 0x10, 0x00) // Tag
-	data = append(data, 'P', 'N')                // VR
+	data = append(data, 'P', 'N')               // VR
 	patientName := "TEST^PATIENT"
 	nameLength := make([]byte, 2)
 	binary.LittleEndian.PutUint16(nameLength, uint16(len(patientName)))
@@ -109,8 +109,8 @@ func TestStripPart10Header_EmptyMetaInfo(t *testing.T) {
 
 	// Immediately start dataset (group 0x0010)
 	data = append(data, 0x10, 0x00, 0x10, 0x00) // Patient Name tag
-	data = append(data, 'P', 'N')                // VR
-	data = append(data, 0x04, 0x00)              // Length
+	data = append(data, 'P', 'N')               // VR
+	data = append(data, 0x04, 0x00)             // Length
 	data = append(data, []byte("TEST")...)
 
 	dataset, err := StripPart10Header(data)
@@ -141,8 +141,8 @@ func TestStripPart10Header_MultipleMetaElements(t *testing.T) {
 
 	// Media Storage SOP Class UID (0002,0002)
 	data = append(data, 0x02, 0x00, 0x02, 0x00) // Tag
-	data = append(data, 'U', 'I')                // VR
-	sopClass := "1.2.3.4\x00"                    // Padded
+	data = append(data, 'U', 'I')               // VR
+	sopClass := "1.2.3.4\x00"                   // Padded
 	sopLength := make([]byte, 2)
 	binary.LittleEndian.PutUint16(sopLength, uint16(len(sopClass)))
 	data = append(data, sopLength...)
@@ -150,7 +150,7 @@ func TestStripPart10Header_MultipleMetaElements(t *testing.T) {
 
 	// Transfer Syntax UID (0002,0010)
 	data = append(data, 0x02, 0x00, 0x10, 0x00) // Tag
-	data = append(data, 'U', 'I')                // VR
+	data = append(data, 'U', 'I')               // VR
 	tsUID := "1.2.840.10008.1.2\x00"            // Implicit VR Little Endian
 	tsLength := make([]byte, 2)
 	binary.LittleEndian.PutUint16(tsLength, uint16(len(tsUID)))
@@ -159,8 +159,8 @@ func TestStripPart10Header_MultipleMetaElements(t *testing.T) {
 
 	// Dataset starts here
 	data = append(data, 0x10, 0x00, 0x10, 0x00) // Patient Name tag
-	data = append(data, 'P', 'N')                // VR
-	data = append(data, 0x04, 0x00)              // Length
+	data = append(data, 'P', 'N')               // VR
+	data = append(data, 0x04, 0x00)             // Length
 	data = append(data, []byte("TEST")...)
 
 	dataset, err := StripPart10Header(data)
@@ -191,9 +191,9 @@ func TestStripPart10Header_LongVRElement(t *testing.T) {
 
 	// Use OB VR which has 32-bit length
 	data = append(data, 0x02, 0x00, 0x01, 0x00) // Tag (0002,0001)
-	data = append(data, 'O', 'B')                // VR
-	data = append(data, 0x00, 0x00)              // Reserved
-	valueData := make([]byte, 100)               // 100 bytes of data
+	data = append(data, 'O', 'B')               // VR
+	data = append(data, 0x00, 0x00)             // Reserved
+	valueData := make([]byte, 100)              // 100 bytes of data
 	length := make([]byte, 4)
 	binary.LittleEndian.PutUint32(length, uint32(len(valueData)))
 	data = append(data, length...)
@@ -201,8 +201,8 @@ func TestStripPart10Header_LongVRElement(t *testing.T) {
 
 	// Dataset starts here
 	data = append(data, 0x10, 0x00, 0x10, 0x00) // Patient Name tag
-	data = append(data, 'P', 'N')                // VR
-	data = append(data, 0x04, 0x00)              // Length
+	data = append(data, 'P', 'N')               // VR
+	data = append(data, 0x04, 0x00)             // Length
 	data = append(data, []byte("TEST")...)
 
 	dataset, err := StripPart10Header(data)
@@ -245,8 +245,8 @@ func TestHasPart10Header_RawDataset(t *testing.T) {
 	// Create raw dataset (no Part 10 header)
 	var data []byte
 	data = append(data, 0x10, 0x00, 0x10, 0x00) // Patient Name tag
-	data = append(data, 'P', 'N')                // VR
-	data = append(data, 0x04, 0x00)              // Length
+	data = append(data, 'P', 'N')               // VR
+	data = append(data, 0x04, 0x00)             // Length
 	data = append(data, []byte("TEST")...)
 
 	if HasPart10Header(data) {
