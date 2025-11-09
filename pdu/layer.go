@@ -69,7 +69,8 @@ var supportedAbstractSyntaxes = map[string]bool{
 }
 
 var supportedTransferSyntaxes = map[string]bool{
-	"1.2.840.10008.1.2": true, // Implicit VR Little Endian
+	"1.2.840.10008.1.2":   true, // Implicit VR Little Endian
+	"1.2.840.10008.1.2.1": true, // Explicit VR Little Endian
 }
 
 func normalizeUID(raw []byte) string {
@@ -93,7 +94,7 @@ func supportsTransferSyntax(uid string) bool {
 	return supportedTransferSyntaxes[uid]
 }
 
-func parsePresentationContext(data []byte) (*PresentationContext, error) {
+func parsePresentationContext(data []byte, logger *slog.Logger) (*PresentationContext, error) {
 	if len(data) < 4 {
 		return nil, fmt.Errorf("presentation context too short: %d", len(data))
 	}
@@ -127,6 +128,14 @@ func parsePresentationContext(data []byte) (*PresentationContext, error) {
 		return nil, fmt.Errorf("presentation context %d missing abstract syntax", ctxID)
 	}
 
+	if logger != nil {
+		logger.Debug("Parsing presentation context",
+			"context_id", ctxID,
+			"abstract_syntax", abstractSyntax,
+			"proposed_transfer_syntaxes", transferSyntaxes,
+			"num_proposed", len(transferSyntaxes))
+	}
+
 	result := presentationResultRejectAbstractSyntax
 	selectedTransfer := ""
 
@@ -141,6 +150,21 @@ func parsePresentationContext(data []byte) (*PresentationContext, error) {
 		if result != presentationResultAcceptance {
 			result = presentationResultRejectTransferSyntax
 		}
+	}
+
+	if logger != nil {
+		logger.Debug("Presentation context negotiation result",
+			"context_id", ctxID,
+			"abstract_syntax", abstractSyntax,
+			"selected_transfer_syntax", selectedTransfer,
+			"result", result)
+	}
+
+	// Validation: accepted contexts MUST have a transfer syntax
+	if result == presentationResultAcceptance && selectedTransfer == "" {
+		// This should never happen - it means we accepted but didn't select a transfer syntax
+		// Force rejection to avoid protocol violation
+		result = presentationResultRejectTransferSyntax
 	}
 
 	return &PresentationContext{
@@ -453,25 +477,62 @@ func (p *Layer) createAssociateAccept() []byte {
 	appContextItem = append(appContextItem, []byte(appContextUID)...)
 
 	// Build all presentation contexts
-	var allPresContextItems []byte
-	for _, ctx := range p.associationCtx.PresentationCtxs {
-		// Abstract Syntax
-		abstractSyntaxItem := []byte{0x30, 0x00} // Item type
-		abstractSyntaxLen := make([]byte, 2)
-		binary.BigEndian.PutUint16(abstractSyntaxLen, uint16(len(ctx.AbstractSyntax)))
-		abstractSyntaxItem = append(abstractSyntaxItem, abstractSyntaxLen...)
-		abstractSyntaxItem = append(abstractSyntaxItem, []byte(ctx.AbstractSyntax)...)
+	// Sort context IDs to ensure consistent ordering
+	var contextIDs []byte
+	for id := range p.associationCtx.PresentationCtxs {
+		contextIDs = append(contextIDs, id)
+	}
+	// Simple bubble sort since we have few contexts
+	for i := 0; i < len(contextIDs); i++ {
+		for j := i + 1; j < len(contextIDs); j++ {
+			if contextIDs[i] > contextIDs[j] {
+				contextIDs[i], contextIDs[j] = contextIDs[j], contextIDs[i]
+			}
+		}
+	}
 
-		// Transfer Syntax
-		transferSyntaxItem := []byte{0x40, 0x00} // Item type
-		transferSyntaxLen := make([]byte, 2)
-		binary.BigEndian.PutUint16(transferSyntaxLen, uint16(len(ctx.TransferSyntax)))
-		transferSyntaxItem = append(transferSyntaxItem, transferSyntaxLen...)
-		transferSyntaxItem = append(transferSyntaxItem, []byte(ctx.TransferSyntax)...)
+	var allPresContextItems []byte
+	for _, id := range contextIDs {
+		ctx := p.associationCtx.PresentationCtxs[id]
+
+		// WORKAROUND: Some DICOM implementations (e.g., DCMTK/Orthanc) incorrectly reject
+		// A-ASSOCIATE-AC PDUs that include rejected presentation contexts, even though
+		// DICOM PS3.8 Section 9.3.3.3 requires including all contexts from the RQ.
+		// Skip rejected contexts to maintain compatibility.
+		if ctx.Result != presentationResultAcceptance {
+			p.logger.Debug("Skipping rejected context (compatibility workaround)",
+				"context_id", ctx.ID,
+				"result", ctx.Result)
+			continue
+		}
+
+		var presContextData []byte
+
+		// According to DICOM Part 8, Section 9.3.3.3:
+		// - For accepted contexts (Result == 0x00): include ONLY Transfer Syntax
+		// - For rejected contexts (Result != 0x00): include NO sub-items
+		if ctx.Result == presentationResultAcceptance {
+			// CRITICAL: Accepted contexts MUST have a transfer syntax
+			if ctx.TransferSyntax == "" {
+				p.logger.Error("Accepted presentation context missing transfer syntax",
+					"context_id", ctx.ID,
+					"abstract_syntax", ctx.AbstractSyntax)
+				// This should never happen - reject the context instead
+				ctx.Result = presentationResultRejectTransferSyntax
+			} else {
+				// Transfer Syntax only for accepted contexts
+				transferSyntaxItem := []byte{0x40, 0x00} // Item type
+				transferSyntaxLen := make([]byte, 2)
+				binary.BigEndian.PutUint16(transferSyntaxLen, uint16(len(ctx.TransferSyntax)))
+				transferSyntaxItem = append(transferSyntaxItem, transferSyntaxLen...)
+				transferSyntaxItem = append(transferSyntaxItem, []byte(ctx.TransferSyntax)...)
+				presContextData = transferSyntaxItem
+			}
+		}
+		// For rejected contexts, presContextData remains empty (no sub-items)
 
 		// Build this presentation context
-		presContextData := append(abstractSyntaxItem, transferSyntaxItem...)
-		presContextItem := []byte{0x21, 0x00} // Item type
+		presContextItem := []byte{0x21, 0x00} // Item type (0x21 = Presentation Context Item - AC)
 		presContextLen := make([]byte, 2)
 		binary.BigEndian.PutUint16(presContextLen, uint16(4+len(presContextData)))
 		presContextItem = append(presContextItem, presContextLen...)
@@ -590,7 +651,7 @@ func (p *Layer) parseAssociationRequest(pdu *PDU) error {
 		case 0x20: // Presentation Context
 			p.logger.Debug("Found presentation context item")
 			proposedContexts++
-			ctx, err := parsePresentationContext(itemData)
+			ctx, err := parsePresentationContext(itemData, p.logger)
 			if err != nil {
 				p.logger.Warn("Failed to parse presentation context", "error", err)
 			} else if p.associationCtx != nil {

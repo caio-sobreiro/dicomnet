@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"net"
 	"sync"
+	"time"
 
 	"github.com/caio-sobreiro/dicomnet/dimse"
 	"github.com/caio-sobreiro/dicomnet/interfaces"
@@ -22,11 +23,27 @@ func WithLogger(logger *slog.Logger) Option {
 	}
 }
 
+// WithReadTimeout sets the read timeout for client connections.
+func WithReadTimeout(timeout time.Duration) Option {
+	return func(s *Server) {
+		s.ReadTimeout = timeout
+	}
+}
+
+// WithWriteTimeout sets the write timeout for client connections.
+func WithWriteTimeout(timeout time.Duration) Option {
+	return func(s *Server) {
+		s.WriteTimeout = timeout
+	}
+}
+
 // Server exposes a reusable DICOM listener that wires the DIMSE and PDU layers.
 type Server struct {
-	AETitle string
-	Handler interfaces.ServiceHandler
-	Logger  *slog.Logger
+	AETitle      string
+	Handler      interfaces.ServiceHandler
+	Logger       *slog.Logger
+	ReadTimeout  time.Duration // Read timeout for connections (default: 60s)
+	WriteTimeout time.Duration // Write timeout for connections (default: 60s)
 }
 
 // New builds a Server with the provided AE title and handler.
@@ -118,6 +135,18 @@ func (s *Server) Serve(ctx context.Context, listener net.Listener) error {
 func (s *Server) handleConnection(ctx context.Context, conn net.Conn, logger *slog.Logger) {
 	logger.Info("Accepted DICOM connection",
 		"remote_addr", conn.RemoteAddr())
+
+	// Set timeouts if configured
+	if s.ReadTimeout > 0 {
+		if err := conn.SetReadDeadline(time.Now().Add(s.ReadTimeout)); err != nil {
+			logger.Warn("Failed to set read deadline", "error", err)
+		}
+	}
+	if s.WriteTimeout > 0 {
+		if err := conn.SetWriteDeadline(time.Now().Add(s.WriteTimeout)); err != nil {
+			logger.Warn("Failed to set write deadline", "error", err)
+		}
+	}
 
 	adapter := &dimseHandlerAdapter{service: dimse.NewService(s.Handler, logger)}
 	layer := pdu.NewLayer(conn, adapter, s.AETitle, logger)
