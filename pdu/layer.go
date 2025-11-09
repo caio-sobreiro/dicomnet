@@ -68,6 +68,9 @@ var supportedAbstractSyntaxes = map[string]bool{
 	types.PatientRootQueryRetrieveInformationModelMove:      true, // Patient Root Q/R - MOVE
 	types.StudyRootQueryRetrieveInformationModelMove:        true, // Study Root Q/R - MOVE
 	types.PatientStudyOnlyQueryRetrieveInformationModelMove: true, // Patient/Study Only Q/R - MOVE
+	types.PatientRootQueryRetrieveInformationModelGet:       true, // Patient Root Q/R - GET
+	types.StudyRootQueryRetrieveInformationModelGet:         true, // Study Root Q/R - GET
+	types.PatientStudyOnlyQueryRetrieveInformationModelGet:  true, // Patient/Study Only Q/R - GET
 }
 
 var supportedTransferSyntaxes = map[string]bool{
