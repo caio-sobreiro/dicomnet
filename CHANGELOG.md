@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.1] - 2025-11-09
+
 ### Added
 - **Services package** (`services/`) with reusable DICOM service implementations
   - `EchoService` - Complete C-ECHO verification service implementation
@@ -24,6 +26,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `HasPart10Header` - Checks if data contains Part 10 header
   - Useful for preparing datasets for DIMSE operations
 - `CreateErrorResponse` utility function for standardized error responses
+- GitHub Copilot instructions documentation (`.github/copilot-instructions.md`)
+
+### Fixed
+- VR comment formatting in Part 10 test file
 
 ## [0.3.0] - 2025-11-09
 
