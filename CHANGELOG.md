@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Comprehensive SOP Class support** with 150+ SOP Class UID constants in `types/sopclass.go`
+  - Storage SOP Classes: CT, MR, US, NM, PET, RT, CR, DX, XA, visible light, ophthalmic, etc.
+  - Query/Retrieve: Study Root, Patient Root, Patient/Study Only (FIND, MOVE, GET)
+  - Worklist: Modality Worklist, General Purpose Worklist
+  - MPPS: Modality Performed Procedure Step
+  - Other: Verification, Storage Commitment, Encapsulated Documents (PDF, CDA, STL, OBJ, MTL)
+- Helper functions for SOP Class identification:
+  - `GetSOPClassInfo(uid)` - Returns metadata (name, category) for any SOP Class UID
+  - `IsStorageSOPClass(uid)` - Checks if UID is a storage SOP class
+  - `IsQueryRetrieveSOPClass(uid)` - Checks if UID is a query/retrieve SOP class
+- **Dynamic SOP Class negotiation** in client
+  - New `SOPClasses []string` field in `client.Config` for customizable SOP Class proposal
+  - Default to 38 commonly used SOP Classes for broad compatibility
+  - Automatic presentation context generation based on configured SOP Classes
+- Comprehensive documentation in `docs/SOP_CLASS_SUPPORT.md` with usage examples
+
 ## [0.3.1] - 2025-11-09
 
 ### Added

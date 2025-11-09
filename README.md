@@ -77,8 +77,16 @@ err := srv.ListenAndServe(ctx, ":11112", "YOUR_AE_TITLE", handler)
 - ✅ C-CANCEL (cancel pending operations)
 - ⏳ C-GET (planned)
 
+### SOP Class Support
+- ✅ 150+ SOP Class UIDs as constants (Storage, Query/Retrieve, Worklist, MPPS, etc.)
+- ✅ Automatic negotiation of 38 commonly used SOP Classes by default
+- ✅ Customizable SOP Class list per connection
+- ✅ Helper functions for SOP Class identification (IsStorageSOPClass, IsQueryRetrieveSOPClass)
+- 📚 See [SOP Class Support Documentation](docs/SOP_CLASS_SUPPORT.md) for complete list
+
 ### Client Features
 - ✅ Configurable timeouts (connect, read, write)
+- ✅ Dynamic SOP Class proposal configuration
 - ✅ Logger injection support
 - ✅ Custom error types for better error handling
 

@@ -21,6 +21,7 @@ type Association struct {
 	presentationCtxs          map[byte]*PresentationContext
 	logger                    *slog.Logger
 	preferredTransferSyntaxes []string
+	sopClasses                []string
 }
 
 // PresentationContext holds negotiated presentation context info
@@ -41,6 +42,7 @@ type Config struct {
 	WriteTimeout              time.Duration // Timeout for write operations (default: 60s)
 	Logger                    *slog.Logger  // Logger for the association (default: slog.Default())
 	PreferredTransferSyntaxes []string      // Transfer syntaxes to propose (default: Explicit VR, Implicit VR)
+	SOPClasses                []string      // SOP Classes to propose (default: common storage + query/retrieve classes)
 }
 
 // Connect establishes a DICOM association with a remote SCP
@@ -92,6 +94,12 @@ func Connect(address string, config Config) (*Association, error) {
 		}
 	}
 
+	// Set default SOP classes if not provided
+	sopClasses := config.SOPClasses
+	if len(sopClasses) == 0 {
+		sopClasses = getDefaultSOPClasses()
+	}
+
 	assoc := &Association{
 		conn:                      conn,
 		callingAETitle:            config.CallingAETitle,
@@ -100,6 +108,7 @@ func Connect(address string, config Config) (*Association, error) {
 		presentationCtxs:          make(map[byte]*PresentationContext),
 		logger:                    logger,
 		preferredTransferSyntaxes: transferSyntaxes,
+		sopClasses:                sopClasses,
 	}
 
 	// Send association request
@@ -135,11 +144,61 @@ func (a *Association) Close() error {
 	return a.conn.Close()
 }
 
+// getDefaultSOPClasses returns a default list of commonly used SOP Classes
+func getDefaultSOPClasses() []string {
+	return []string{
+		// Verification
+		"1.2.840.10008.1.1", // Verification SOP Class (C-ECHO)
+
+		// Common Storage SOP Classes
+		"1.2.840.10008.5.1.4.1.1.1",   // Computed Radiography
+		"1.2.840.10008.5.1.4.1.1.2",   // CT Image Storage
+		"1.2.840.10008.5.1.4.1.1.2.1", // Enhanced CT
+		"1.2.840.10008.5.1.4.1.1.4",   // MR Image Storage
+		"1.2.840.10008.5.1.4.1.1.4.1", // Enhanced MR
+		"1.2.840.10008.5.1.4.1.1.6.1", // Ultrasound Image Storage
+		"1.2.840.10008.5.1.4.1.1.7",   // Secondary Capture
+		"1.2.840.10008.5.1.4.1.1.20",  // Nuclear Medicine
+		"1.2.840.10008.5.1.4.1.1.128", // PET Image Storage
+		"1.2.840.10008.5.1.4.1.1.130", // Enhanced PET
+
+		// Digital Radiography
+		"1.2.840.10008.5.1.4.1.1.1.1",   // Digital X-Ray Presentation
+		"1.2.840.10008.5.1.4.1.1.1.1.1", // Digital X-Ray Processing
+		"1.2.840.10008.5.1.4.1.1.1.2",   // Digital Mammography Presentation
+		"1.2.840.10008.5.1.4.1.1.1.2.1", // Digital Mammography Processing
+
+		// X-Ray Angiographic
+		"1.2.840.10008.5.1.4.1.1.12.1",   // X-Ray Angiographic
+		"1.2.840.10008.5.1.4.1.1.12.1.1", // Enhanced XA
+		"1.2.840.10008.5.1.4.1.1.12.2",   // X-Ray Radiofluoroscopic
+		"1.2.840.10008.5.1.4.1.1.12.2.1", // Enhanced XRF
+
+		// RT (Radiation Therapy)
+		"1.2.840.10008.5.1.4.1.1.481.1", // RT Image
+		"1.2.840.10008.5.1.4.1.1.481.2", // RT Dose
+		"1.2.840.10008.5.1.4.1.1.481.3", // RT Structure Set
+		"1.2.840.10008.5.1.4.1.1.481.5", // RT Plan
+
+		// Query/Retrieve - Study Root
+		"1.2.840.10008.5.1.4.1.2.2.1", // Study Root FIND
+		"1.2.840.10008.5.1.4.1.2.2.2", // Study Root MOVE
+		"1.2.840.10008.5.1.4.1.2.2.3", // Study Root GET
+
+		// Query/Retrieve - Patient Root
+		"1.2.840.10008.5.1.4.1.2.1.1", // Patient Root FIND
+		"1.2.840.10008.5.1.4.1.2.1.2", // Patient Root MOVE
+		"1.2.840.10008.5.1.4.1.2.1.3", // Patient Root GET
+
+		// Worklist
+		"1.2.840.10008.5.1.4.31", // Modality Worklist FIND
+	}
+}
+
 // sendAssociateRQ sends an A-ASSOCIATE-RQ PDU
 func (a *Association) sendAssociateRQ() error {
 	// Build A-ASSOCIATE-RQ PDU
-	// This is a simplified version - in production you'd want more presentation contexts
-	buf := make([]byte, 0, 1024)
+	buf := make([]byte, 0, 4096)
 
 	// Protocol version (2 bytes) = 0x0001
 	buf = append(buf, 0x00, 0x01)
@@ -172,20 +231,16 @@ func (a *Association) sendAssociateRQ() error {
 	buf = append(buf, 0x00, 0x15)                         // Length
 	buf = append(buf, []byte("1.2.840.10008.3.1.1.1")...) // Application Context UID
 
-	// Presentation Context Item - CT Image Storage
-	buf = a.addPresentationContext(buf, 1, "1.2.840.10008.5.1.4.1.1.2")
+	// Add Presentation Contexts for all SOP Classes
+	contextID := byte(1)
+	for _, sopClass := range a.sopClasses {
+		buf = a.addPresentationContext(buf, contextID, sopClass)
+		contextID += 2 // Presentation context IDs must be odd
+	}
 
-	// Presentation Context Item - MR Image Storage
-	buf = a.addPresentationContext(buf, 3, "1.2.840.10008.5.1.4.1.1.4")
-
-	// Presentation Context Item - Secondary Capture
-	buf = a.addPresentationContext(buf, 5, "1.2.840.10008.5.1.4.1.1.7")
-
-	// Presentation Context Item - Verification SOP Class (C-ECHO)
-	buf = a.addPresentationContext(buf, 7, "1.2.840.10008.1.1")
-
-	// Presentation Context Item - Study Root Query/Retrieve Information Model - FIND (C-FIND)
-	buf = a.addPresentationContext(buf, 9, "1.2.840.10008.5.1.4.1.2.2.1")
+	a.logger.Debug("Proposing presentation contexts",
+		"count", len(a.sopClasses),
+		"sop_classes", a.sopClasses)
 
 	// User Information Item
 	buf = a.addUserInformation(buf)
