@@ -2,6 +2,7 @@ package client
 
 import (
 	"encoding/binary"
+	"log/slog"
 	"testing"
 
 	"github.com/caio-sobreiro/dicomnet/dicom"
@@ -23,6 +24,7 @@ func TestSendCEcho(t *testing.T) {
 				Accepted:       true,
 			},
 		},
+		logger: slog.Default(),
 	}
 
 	command := buildCommandDataset(&types.Message{
@@ -67,6 +69,7 @@ func TestSendCFind(t *testing.T) {
 				Accepted:       true,
 			},
 		},
+		logger: slog.Default(),
 	}
 
 	requestDataset := dicom.NewDataset()
@@ -138,7 +141,7 @@ func buildCommandDataset(msg *types.Message) []byte {
 		if len(value)%2 == 1 {
 			value = append(value, 0x00)
 		}
-		body = appendImplicitElement(body, 0x0000, 0x0002, value)
+		body = dimse.AppendImplicitElement(body, 0x0000, 0x0002, value)
 	}
 
 	if msg.RequestedSOPClassUID != "" {
@@ -146,41 +149,41 @@ func buildCommandDataset(msg *types.Message) []byte {
 		if len(value)%2 == 1 {
 			value = append(value, 0x00)
 		}
-		body = appendImplicitElement(body, 0x0000, 0x0003, value)
+		body = dimse.AppendImplicitElement(body, 0x0000, 0x0003, value)
 	}
 
 	if msg.CommandField != 0 {
 		buf := make([]byte, 2)
 		binary.LittleEndian.PutUint16(buf, msg.CommandField)
-		body = appendImplicitElement(body, 0x0000, 0x0100, buf)
+		body = dimse.AppendImplicitElement(body, 0x0000, 0x0100, buf)
 	}
 
 	if msg.MessageID != 0 {
 		buf := make([]byte, 2)
 		binary.LittleEndian.PutUint16(buf, msg.MessageID)
-		body = appendImplicitElement(body, 0x0000, 0x0110, buf)
+		body = dimse.AppendImplicitElement(body, 0x0000, 0x0110, buf)
 	}
 
 	if msg.MessageIDBeingRespondedTo != 0 {
 		buf := make([]byte, 2)
 		binary.LittleEndian.PutUint16(buf, msg.MessageIDBeingRespondedTo)
-		body = appendImplicitElement(body, 0x0000, 0x0120, buf)
+		body = dimse.AppendImplicitElement(body, 0x0000, 0x0120, buf)
 	}
 
 	buf := make([]byte, 2)
 	binary.LittleEndian.PutUint16(buf, msg.CommandDataSetType)
-	body = appendImplicitElement(body, 0x0000, 0x0800, buf)
+	body = dimse.AppendImplicitElement(body, 0x0000, 0x0800, buf)
 
 	if (msg.CommandField&0x8000) != 0 || msg.Status != 0 {
 		statusBuf := make([]byte, 2)
 		binary.LittleEndian.PutUint16(statusBuf, msg.Status)
-		body = appendImplicitElement(body, 0x0000, 0x0900, statusBuf)
+		body = dimse.AppendImplicitElement(body, 0x0000, 0x0900, statusBuf)
 	}
 
 	groupLength := make([]byte, 4)
 	binary.LittleEndian.PutUint32(groupLength, uint32(len(body)))
 
-	command := appendImplicitElement(nil, 0x0000, 0x0000, groupLength)
+	command := dimse.AppendImplicitElement(nil, 0x0000, 0x0000, groupLength)
 	command = append(command, body...)
 
 	return command
