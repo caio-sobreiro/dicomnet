@@ -19,6 +19,12 @@ assoc, err := client.Connect("hostname:4242", client.Config{
     CallingAETitle: "CLIENT_AE",
     CalledAETitle:  "SERVER_AE",
     MaxPDULength:   16384,
+    // Optional: Specify preferred transfer syntaxes
+    PreferredTransferSyntaxes: []string{
+        "1.2.840.10008.1.2.4.90", // JPEG 2000 Lossless
+        "1.2.840.10008.1.2.1",    // Explicit VR Little Endian
+        "1.2.840.10008.1.2",      // Implicit VR Little Endian
+    },
 })
 if err != nil {
     log.Fatal(err)
@@ -46,14 +52,18 @@ if resp.Status != 0x0000 {
 ## Implementation Details
 
 - Uses **Implicit VR Little Endian** for DIMSE commands
-- Supports **Explicit VR Little Endian** for datasets
+- Supports **Explicit VR Little Endian** for datasets (default)
+- **Dynamic transfer syntax negotiation** - proposes preferred syntaxes first, falls back to standard formats
 - Handles PDU fragmentation for large datasets
 - Presentation contexts for CT, MR, and Secondary Capture
+- Shared DIMSE utilities with server implementation (`dimse` package)
 
 ## Status
 
 ✅ Association establishment
+✅ C-ECHO SCU
+✅ C-FIND SCU
 ✅ C-STORE SCU
-⏳ C-FIND SCU (future)
-⏳ C-MOVE SCU (future)
-⏳ C-ECHO SCU (future)
+✅ C-MOVE SCU
+✅ C-CANCEL SCU
+⏳ C-GET SCU (future)
