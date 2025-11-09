@@ -180,6 +180,31 @@ func buildCommandDataset(msg *types.Message) []byte {
 		body = dimse.AppendImplicitElement(body, 0x0000, 0x0900, statusBuf)
 	}
 
+	// C-GET/C-MOVE sub-operation counters
+	if msg.NumberOfRemainingSuboperations != nil {
+		buf := make([]byte, 2)
+		binary.LittleEndian.PutUint16(buf, *msg.NumberOfRemainingSuboperations)
+		body = dimse.AppendImplicitElement(body, 0x0000, 0x1020, buf)
+	}
+
+	if msg.NumberOfCompletedSuboperations != nil {
+		buf := make([]byte, 2)
+		binary.LittleEndian.PutUint16(buf, *msg.NumberOfCompletedSuboperations)
+		body = dimse.AppendImplicitElement(body, 0x0000, 0x1021, buf)
+	}
+
+	if msg.NumberOfFailedSuboperations != nil {
+		buf := make([]byte, 2)
+		binary.LittleEndian.PutUint16(buf, *msg.NumberOfFailedSuboperations)
+		body = dimse.AppendImplicitElement(body, 0x0000, 0x1022, buf)
+	}
+
+	if msg.NumberOfWarningSuboperations != nil {
+		buf := make([]byte, 2)
+		binary.LittleEndian.PutUint16(buf, *msg.NumberOfWarningSuboperations)
+		body = dimse.AppendImplicitElement(body, 0x0000, 0x1023, buf)
+	}
+
 	groupLength := make([]byte, 4)
 	binary.LittleEndian.PutUint32(groupLength, uint32(len(body)))
 

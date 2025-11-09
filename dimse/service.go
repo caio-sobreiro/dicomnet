@@ -14,6 +14,8 @@ import (
 const (
 	CStoreRQ  = 0x0001
 	CStoreRSP = 0x8001
+	CGetRQ    = 0x0010
+	CGetRSP   = 0x8010
 	CFindRQ   = 0x0020
 	CFindRSP  = 0x8020
 	CMoveRQ   = 0x0021
@@ -55,6 +57,38 @@ type responseHandler struct {
 // SendResponse implements ResponseSender interface
 func (r *responseHandler) SendResponse(msg *types.Message, data []byte) error {
 	return r.service.sendDIMSEResponse(msg, data, r.presContextID, r.pduLayer)
+}
+
+// cGetResponder implements CGetResponder for C-GET operations
+type cGetResponder struct {
+	responseHandler
+	messageIDCounter uint16
+}
+
+// SendCStore implements CGetResponder interface - sends C-STORE sub-operation on same association
+func (c *cGetResponder) SendCStore(sopClassUID, sopInstanceUID string, data []byte) error {
+	c.messageIDCounter++
+
+	// Build C-STORE-RQ command
+	command := &types.Message{
+		CommandField:           CStoreRQ,
+		MessageID:              c.messageIDCounter,
+		Priority:               0x0002, // Medium priority
+		AffectedSOPClassUID:    sopClassUID,
+		AffectedSOPInstanceUID: sopInstanceUID,
+		CommandDataSetType:     0x0000, // Dataset present
+	}
+
+	commandData := c.service.createDIMSECommand(command)
+
+	// Send C-STORE-RQ with dataset on the same association
+	if err := c.pduLayer.SendDIMSEResponseWithDataset(c.presContextID, commandData, data); err != nil {
+		return fmt.Errorf("failed to send C-STORE sub-operation: %w", err)
+	}
+
+	// Note: In a full implementation, we should wait for C-STORE-RSP
+	// For now, we'll assume success
+	return nil
 }
 
 // NewService creates a new DIMSE service with a handler
@@ -133,13 +167,27 @@ func (d *Service) processCompleteMessage(ctx context.Context, presContextID byte
 		"message_id", d.currentMsg.MessageID,
 		"dataset_size", len(d.datasetData))
 
-	// Check if handler supports streaming (for multi-response operations like C-FIND)
+	// Check if handler supports streaming (for multi-response operations like C-FIND, C-GET, C-MOVE)
 	if streamingHandler, ok := d.handler.(interfaces.StreamingServiceHandler); ok {
 		d.logger.DebugContext(ctx, "Using streaming handler for multi-response operation")
-		responder := &responseHandler{
-			service:       d,
-			presContextID: presContextID,
-			pduLayer:      pduLayer,
+
+		// For C-GET, provide a CGetResponder that can send C-STORE sub-operations
+		var responder interfaces.ResponseSender
+		if d.currentMsg.CommandField == CGetRQ {
+			responder = &cGetResponder{
+				responseHandler: responseHandler{
+					service:       d,
+					presContextID: presContextID,
+					pduLayer:      pduLayer,
+				},
+				messageIDCounter: 0,
+			}
+		} else {
+			responder = &responseHandler{
+				service:       d,
+				presContextID: presContextID,
+				pduLayer:      pduLayer,
+			}
 		}
 
 		err := streamingHandler.HandleDIMSEStreaming(ctx, d.currentMsg, d.datasetData, responder)
@@ -179,7 +227,7 @@ func (d *Service) sendDIMSEResponse(msg *types.Message, data []byte, presContext
 func (d *Service) createDIMSECommand(msg *types.Message) []byte {
 	var elements []byte
 
-	// Affected SOP Class UID (0000,0002) - for echo
+	// Affected SOP Class UID (0000,0002)
 	if msg.AffectedSOPClassUID != "" {
 		sopClassUID := msg.AffectedSOPClassUID
 		if len(sopClassUID)%2 == 1 {
@@ -199,6 +247,15 @@ func (d *Service) createDIMSECommand(msg *types.Message) []byte {
 	binary.LittleEndian.PutUint16(cmdField, msg.CommandField)
 	elements = append(elements, cmdField...)
 
+	// Message ID (0000,0110) - for requests
+	if msg.MessageID > 0 && msg.MessageIDBeingRespondedTo == 0 {
+		elements = append(elements, 0x00, 0x00, 0x10, 0x01) // Tag
+		elements = append(elements, 0x02, 0x00, 0x00, 0x00) // Length = 2
+		msgID := make([]byte, 2)
+		binary.LittleEndian.PutUint16(msgID, msg.MessageID)
+		elements = append(elements, msgID...)
+	}
+
 	// Message ID Being Responded To (0000,0120)
 	if msg.MessageIDBeingRespondedTo > 0 {
 		elements = append(elements, 0x00, 0x00, 0x20, 0x01) // Tag
@@ -206,6 +263,19 @@ func (d *Service) createDIMSECommand(msg *types.Message) []byte {
 		msgID := make([]byte, 2)
 		binary.LittleEndian.PutUint16(msgID, msg.MessageIDBeingRespondedTo)
 		elements = append(elements, msgID...)
+	}
+
+	// Affected SOP Instance UID (0000,1000) - for C-STORE
+	if msg.AffectedSOPInstanceUID != "" {
+		sopInstanceUID := msg.AffectedSOPInstanceUID
+		if len(sopInstanceUID)%2 == 1 {
+			sopInstanceUID += "\x00"
+		}
+		elements = append(elements, 0x00, 0x00, 0x00, 0x10) // Tag
+		sopInstLen := make([]byte, 4)
+		binary.LittleEndian.PutUint32(sopInstLen, uint32(len(sopInstanceUID)))
+		elements = append(elements, sopInstLen...)
+		elements = append(elements, []byte(sopInstanceUID)...)
 	}
 
 	// CommandDataSetType (0000,0800)

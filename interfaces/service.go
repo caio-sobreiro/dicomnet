@@ -22,6 +22,13 @@ type ResponseSender interface {
 	SendResponse(msg *types.Message, data []byte) error
 }
 
+// CGetResponder interface for C-GET operations that need to send C-STORE sub-operations
+type CGetResponder interface {
+	ResponseSender
+	// SendCStore sends a C-STORE sub-operation on the same association
+	SendCStore(sopClassUID, sopInstanceUID string, data []byte) error
+}
+
 // DIMSEHandler interface for PDU layer to communicate with DIMSE layer
 type DIMSEHandler interface {
 	HandleDIMSEMessage(presContextID byte, msgCtrlHeader byte, data []byte, pduLayer PDULayer) error

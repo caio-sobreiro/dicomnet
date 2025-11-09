@@ -85,6 +85,8 @@ func (s *sampleHandler) HandleDIMSEStreaming(ctx context.Context, msg *types.Mes
 		return s.handleCFindStreaming(ctx, msg, data, responder)
 	case types.CMoveRQ:
 		return s.handleCMoveStreaming(ctx, msg, data, responder)
+	case types.CGetRQ:
+		return s.handleCGetStreaming(ctx, msg, data, responder)
 	default:
 		// Fall back to non-streaming handler
 		response, payload, err := s.HandleDIMSE(ctx, msg, data)
@@ -191,6 +193,72 @@ func (s *sampleHandler) handleCMoveStreaming(ctx context.Context, msg *types.Mes
 
 	// Send final success response
 	final := buildMoveResponse(msg, types.StatusSuccess, 0, completed, failed, warning)
+	return responder.SendResponse(final, nil)
+}
+
+func (s *sampleHandler) handleCGetStreaming(ctx context.Context, msg *types.Message, data []byte, responder interfaces.ResponseSender) error {
+	slog.InfoContext(ctx, "Received C-GET request")
+
+	dataset, err := dicom.ParseDataset(data)
+	if err != nil {
+		slog.ErrorContext(ctx, "Failed to parse C-GET dataset", "error", err)
+		failure := buildGetResponse(msg, types.StatusFailure, 0, 0, 0, 0)
+		return responder.SendResponse(failure, nil)
+	}
+
+	logCGetRequest(ctx, msg, dataset)
+
+	// Find matching instances
+	studyUID := dataset.GetString(dicom.Tag{Group: 0x0020, Element: 0x000D})
+	seriesUID := dataset.GetString(dicom.Tag{Group: 0x0020, Element: 0x000E})
+	sopUID := dataset.GetString(dicom.Tag{Group: 0x0008, Element: 0x0018})
+
+	matchingInstances := s.findMatchingInstances(studyUID, seriesUID, sopUID)
+	totalInstances := len(matchingInstances)
+
+	slog.InfoContext(ctx, "Found matching instances", "count", totalInstances)
+
+	if totalInstances == 0 {
+		// No matches - send success with 0 completed
+		final := buildGetResponse(msg, types.StatusSuccess, 0, 0, 0, 0)
+		return responder.SendResponse(final, nil)
+	}
+
+	// Check if responder supports C-STORE sub-operations
+	cgetResponder, ok := responder.(interfaces.CGetResponder)
+	if !ok {
+		slog.ErrorContext(ctx, "Responder does not support C-GET operations")
+		failure := buildGetResponse(msg, types.StatusFailure, 0, 0, 0, 0)
+		return responder.SendResponse(failure, nil)
+	}
+
+	// Perform C-STORE sub-operations on the same association
+	completed := uint16(0)
+	failed := uint16(0)
+	warning := uint16(0)
+
+	for i, instance := range matchingInstances {
+		remaining := uint16(totalInstances - i)
+
+		// Send pending status before each transfer
+		pending := buildGetResponse(msg, types.StatusPending, remaining, completed, failed, warning)
+		if err := responder.SendResponse(pending, nil); err != nil {
+			return err
+		}
+
+		// Perform C-STORE on the same association
+		err := cgetResponder.SendCStore(instance.SOPClassUID, instance.SOPInstanceUID, instance.Data)
+		if err != nil {
+			slog.ErrorContext(ctx, "C-STORE sub-operation failed", "error", err, "sop_instance", instance.SOPInstanceUID)
+			failed++
+		} else {
+			slog.InfoContext(ctx, "C-STORE sub-operation successful", "sop_instance", instance.SOPInstanceUID)
+			completed++
+		}
+	}
+
+	// Send final success response
+	final := buildGetResponse(msg, types.StatusSuccess, 0, completed, failed, warning)
 	return responder.SendResponse(final, nil)
 }
 
@@ -526,6 +594,25 @@ func buildMoveResponse(req *types.Message, status uint16, remaining, completed, 
 	return resp
 }
 
+func buildGetResponse(req *types.Message, status uint16, remaining, completed, failed, warning uint16) *types.Message {
+	// Helper to create uint16 pointers
+	uint16Ptr := func(v uint16) *uint16 { return &v }
+
+	resp := &types.Message{
+		CommandField:                   types.CGetRSP,
+		MessageIDBeingRespondedTo:      req.MessageID,
+		AffectedSOPClassUID:            req.AffectedSOPClassUID,
+		CommandDataSetType:             0x0101,
+		Status:                         status,
+		NumberOfRemainingSuboperations: uint16Ptr(remaining),
+		NumberOfCompletedSuboperations: uint16Ptr(completed),
+		NumberOfFailedSuboperations:    uint16Ptr(failed),
+		NumberOfWarningSuboperations:   uint16Ptr(warning),
+	}
+
+	return resp
+}
+
 func logCMoveRequest(ctx context.Context, msg *types.Message, dataset *dicom.Dataset) {
 	if dataset == nil {
 		slog.InfoContext(ctx, "Handling C-MOVE request",
@@ -536,6 +623,18 @@ func logCMoveRequest(ctx context.Context, msg *types.Message, dataset *dicom.Dat
 
 	slog.InfoContext(ctx, "Handling C-MOVE request",
 		"move_destination", msg.MoveDestination,
+		"study_uid", dataset.GetString(dicom.Tag{Group: 0x0020, Element: 0x000D}),
+		"series_uid", dataset.GetString(dicom.Tag{Group: 0x0020, Element: 0x000E}),
+		"sop_uid", dataset.GetString(dicom.Tag{Group: 0x0008, Element: 0x0018}))
+}
+
+func logCGetRequest(ctx context.Context, msg *types.Message, dataset *dicom.Dataset) {
+	if dataset == nil {
+		slog.InfoContext(ctx, "Handling C-GET request", "note", "no dataset provided")
+		return
+	}
+
+	slog.InfoContext(ctx, "Handling C-GET request",
 		"study_uid", dataset.GetString(dicom.Tag{Group: 0x0020, Element: 0x000D}),
 		"series_uid", dataset.GetString(dicom.Tag{Group: 0x0020, Element: 0x000E}),
 		"sop_uid", dataset.GetString(dicom.Tag{Group: 0x0008, Element: 0x0018}))

@@ -85,6 +85,31 @@ func (b *ResponseBuilder) CMoveResponse(status uint16, completed, failed, warnin
 	}
 }
 
+// CGetResponse creates a C-GET-RSP message with sub-operation counts.
+//
+// Parameters:
+//   - status: The response status (dimse.StatusSuccess, dimse.StatusPending, dimse.StatusFailure, etc.)
+//   - completed: Number of completed sub-operations (can be nil if not applicable)
+//   - failed: Number of failed sub-operations (can be nil if not applicable)
+//   - warning: Number of sub-operations with warnings (can be nil if not applicable)
+//   - remaining: Number of remaining sub-operations (can be nil if not applicable)
+//
+// For pending responses during C-STORE operations, use dimse.StatusPending.
+// For the final response, use dimse.StatusSuccess.
+func (b *ResponseBuilder) CGetResponse(status uint16, completed, failed, warning, remaining *uint16) *types.Message {
+	return &types.Message{
+		CommandField:                   dimse.CGetRSP,
+		MessageIDBeingRespondedTo:      b.request.MessageID,
+		AffectedSOPClassUID:            b.request.AffectedSOPClassUID,
+		CommandDataSetType:             0x0101, // No Data Set Present
+		Status:                         status,
+		NumberOfCompletedSuboperations: completed,
+		NumberOfFailedSuboperations:    failed,
+		NumberOfWarningSuboperations:   warning,
+		NumberOfRemainingSuboperations: remaining,
+	}
+}
+
 // CStoreResponse creates a C-STORE-RSP message.
 //
 // Parameters:
@@ -154,6 +179,34 @@ func NewCMovePendingResponse(request *types.Message, completed, failed, warning,
 // NewCMoveErrorResponse creates an error C-MOVE-RSP message.
 func NewCMoveErrorResponse(request *types.Message, status uint16) *types.Message {
 	return NewResponseBuilder(request).CMoveResponse(status, nil, nil, nil, nil)
+}
+
+// NewCGetSuccessResponse creates a final success C-GET-RSP message with sub-operation counts.
+func NewCGetSuccessResponse(request *types.Message, completed, failed, warning uint16) *types.Message {
+	remaining := uint16(0)
+	return NewResponseBuilder(request).CGetResponse(
+		dimse.StatusSuccess,
+		&completed,
+		&failed,
+		&warning,
+		&remaining,
+	)
+}
+
+// NewCGetPendingResponse creates a pending C-GET-RSP message with sub-operation counts.
+func NewCGetPendingResponse(request *types.Message, completed, failed, warning, remaining uint16) *types.Message {
+	return NewResponseBuilder(request).CGetResponse(
+		dimse.StatusPending,
+		&completed,
+		&failed,
+		&warning,
+		&remaining,
+	)
+}
+
+// NewCGetErrorResponse creates an error C-GET-RSP message.
+func NewCGetErrorResponse(request *types.Message, status uint16) *types.Message {
+	return NewResponseBuilder(request).CGetResponse(status, nil, nil, nil, nil)
 }
 
 // NewCStoreResponse creates a C-STORE-RSP message.

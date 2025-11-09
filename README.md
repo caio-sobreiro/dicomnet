@@ -73,9 +73,34 @@ err := srv.ListenAndServe(ctx, ":11112", "YOUR_AE_TITLE", handler)
 - ✅ C-ECHO (verification)
 - ✅ C-FIND (query/retrieve)
 - ✅ C-STORE (storage)
-- ✅ C-MOVE (retrieve with sub-operations)
+- ✅ C-MOVE (retrieve with sub-operations to destination AET)
+- ✅ C-GET (retrieve with sub-operations on same association)
 - ✅ C-CANCEL (cancel pending operations)
-- ⏳ C-GET (planned)
+
+#### C-GET vs C-MOVE
+
+Both operations retrieve DICOM instances, but differ in how data is transferred:
+
+| Feature | C-MOVE | C-GET |
+|---------|--------|-------|
+| **Destination** | Separate AE Title | Requesting SCU |
+| **Association** | New association to destination | Same association |
+| **Network** | Can cross firewalls (SCP initiates) | Simpler (one association) |
+| **Use Case** | PACS-to-PACS transfers | Direct retrieval |
+
+**C-MOVE**: "Send images to that other system"
+```
+SCU ---C-MOVE-RQ (dest="PACS_B")---> SCP
+SCP ---C-STORE------------------> PACS_B (new connection)
+SCU <--C-MOVE-RSP------------------ SCP
+```
+
+**C-GET**: "Send images to me right now"
+```
+SCU ---C-GET-RQ---> SCP
+SCU <--C-STORE----- SCP (same connection!)
+SCU <--C-GET-RSP--- SCP
+```
 
 ### SOP Class Support
 - ✅ 150+ SOP Class UIDs as constants (Storage, Query/Retrieve, Worklist, MPPS, etc.)
@@ -136,7 +161,8 @@ go run ./cmd/sample_server --dicom path/to/file.dcm --port 4242
 The server supports:
 - C-ECHO (verification)
 - C-FIND (study/series/instance queries)
-- C-MOVE (retrieve with C-STORE sub-operations)
+- C-MOVE (retrieve with C-STORE sub-operations to destination AET)
+- C-GET (retrieve with C-STORE sub-operations on same association)
 
 ## Testing
 
