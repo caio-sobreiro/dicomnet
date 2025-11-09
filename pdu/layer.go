@@ -61,18 +61,18 @@ const (
 )
 
 var supportedAbstractSyntaxes = map[string]bool{
-	"1.2.840.10008.1.1":           true, // Verification SOP Class (C-ECHO)
-	"1.2.840.10008.5.1.4.1.2.1.1": true, // Patient Root Q/R - FIND
-	"1.2.840.10008.5.1.4.1.2.2.1": true, // Study Root Q/R - FIND
-	"1.2.840.10008.5.1.4.1.2.3.1": true, // Patient/Study Only Q/R - FIND
-	"1.2.840.10008.5.1.4.1.2.1.2": true, // Patient Root Q/R - MOVE
-	"1.2.840.10008.5.1.4.1.2.2.2": true, // Study Root Q/R - MOVE
-	"1.2.840.10008.5.1.4.1.2.3.2": true, // Patient/Study Only Q/R - MOVE
+	types.VerificationSOPClass:                              true, // Verification SOP Class (C-ECHO)
+	types.PatientRootQueryRetrieveInformationModelFind:      true, // Patient Root Q/R - FIND
+	types.StudyRootQueryRetrieveInformationModelFind:        true, // Study Root Q/R - FIND
+	types.PatientStudyOnlyQueryRetrieveInformationModelFind: true, // Patient/Study Only Q/R - FIND
+	types.PatientRootQueryRetrieveInformationModelMove:      true, // Patient Root Q/R - MOVE
+	types.StudyRootQueryRetrieveInformationModelMove:        true, // Study Root Q/R - MOVE
+	types.PatientStudyOnlyQueryRetrieveInformationModelMove: true, // Patient/Study Only Q/R - MOVE
 }
 
 var supportedTransferSyntaxes = map[string]bool{
-	"1.2.840.10008.1.2":   true, // Implicit VR Little Endian
-	"1.2.840.10008.1.2.1": true, // Explicit VR Little Endian
+	types.ImplicitVRLittleEndian: true, // Implicit VR Little Endian
+	types.ExplicitVRLittleEndian: true, // Explicit VR Little Endian
 }
 
 func normalizeUID(raw []byte) string {
@@ -85,8 +85,8 @@ func supportsAbstractSyntax(uid string) bool {
 	if supportedAbstractSyntaxes[uid] {
 		return true
 	}
-	// Accept all storage SOP classes (C-STORE) based on standard prefix
-	if strings.HasPrefix(uid, "1.2.840.10008.5.1.4.1.1.") {
+	// Accept all storage SOP classes (C-STORE)
+	if types.IsStorageSOPClass(uid) {
 		return true
 	}
 	return false

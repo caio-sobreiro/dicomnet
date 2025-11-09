@@ -4,6 +4,17 @@ package types
 // The Application Context defines the DICOM application-level message exchange rules.
 const ApplicationContextUID = "1.2.840.10008.3.1.1.1"
 
+// Implementation Identification
+// These identify this specific implementation of DICOM
+const (
+	// ImplementationClassUID uniquely identifies the dicomnet implementation
+	// Using private range: 1.2.826.0.1.3680043.10.787.x
+	ImplementationClassUID = "1.2.826.0.1.3680043.10.787.1.1"
+
+	// ImplementationVersionName is a string identifier for this version
+	ImplementationVersionName = "DICOMNET_0_3"
+)
+
 // DICOM SOP Class UIDs as defined in DICOM Part 4, Annex B
 // https://dicom.nema.org/medical/dicom/current/output/chtml/part04/sect_B.5.html
 

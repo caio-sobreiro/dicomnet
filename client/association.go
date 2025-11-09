@@ -149,50 +149,50 @@ func (a *Association) Close() error {
 func getDefaultSOPClasses() []string {
 	return []string{
 		// Verification
-		"1.2.840.10008.1.1", // Verification SOP Class (C-ECHO)
+		types.VerificationSOPClass, // Verification SOP Class (C-ECHO)
 
 		// Common Storage SOP Classes
-		"1.2.840.10008.5.1.4.1.1.1",   // Computed Radiography
-		"1.2.840.10008.5.1.4.1.1.2",   // CT Image Storage
-		"1.2.840.10008.5.1.4.1.1.2.1", // Enhanced CT
-		"1.2.840.10008.5.1.4.1.1.4",   // MR Image Storage
-		"1.2.840.10008.5.1.4.1.1.4.1", // Enhanced MR
-		"1.2.840.10008.5.1.4.1.1.6.1", // Ultrasound Image Storage
-		"1.2.840.10008.5.1.4.1.1.7",   // Secondary Capture
-		"1.2.840.10008.5.1.4.1.1.20",  // Nuclear Medicine
-		"1.2.840.10008.5.1.4.1.1.128", // PET Image Storage
-		"1.2.840.10008.5.1.4.1.1.130", // Enhanced PET
+		types.ComputedRadiographyImageStorage, // Computed Radiography
+		types.CTImageStorage,                  // CT Image Storage
+		types.EnhancedCTImageStorage,          // Enhanced CT
+		types.MRImageStorage,                  // MR Image Storage
+		types.EnhancedMRImageStorage,          // Enhanced MR
+		types.UltrasoundImageStorage,          // Ultrasound Image Storage
+		types.SecondaryCaptureImageStorage,    // Secondary Capture
+		types.NuclearMedicineImageStorage,     // Nuclear Medicine
+		types.PETImageStorage,                 // PET Image Storage
+		types.EnhancedPETImageStorage,         // Enhanced PET
 
 		// Digital Radiography
-		"1.2.840.10008.5.1.4.1.1.1.1",   // Digital X-Ray Presentation
-		"1.2.840.10008.5.1.4.1.1.1.1.1", // Digital X-Ray Processing
-		"1.2.840.10008.5.1.4.1.1.1.2",   // Digital Mammography Presentation
-		"1.2.840.10008.5.1.4.1.1.1.2.1", // Digital Mammography Processing
+		types.DigitalXRayImageStorageForPresentation,            // Digital X-Ray Presentation
+		types.DigitalXRayImageStorageForProcessing,              // Digital X-Ray Processing
+		types.DigitalMammographyXRayImageStorageForPresentation, // Digital Mammography Presentation
+		types.DigitalMammographyXRayImageStorageForProcessing,   // Digital Mammography Processing
 
 		// X-Ray Angiographic
-		"1.2.840.10008.5.1.4.1.1.12.1",   // X-Ray Angiographic
-		"1.2.840.10008.5.1.4.1.1.12.1.1", // Enhanced XA
-		"1.2.840.10008.5.1.4.1.1.12.2",   // X-Ray Radiofluoroscopic
-		"1.2.840.10008.5.1.4.1.1.12.2.1", // Enhanced XRF
+		types.XRayAngiographicImageStorage,      // X-Ray Angiographic
+		types.EnhancedXAImageStorage,            // Enhanced XA
+		types.XRayRadiofluoroscopicImageStorage, // X-Ray Radiofluoroscopic
+		types.EnhancedXRFImageStorage,           // Enhanced XRF
 
 		// RT (Radiation Therapy)
-		"1.2.840.10008.5.1.4.1.1.481.1", // RT Image
-		"1.2.840.10008.5.1.4.1.1.481.2", // RT Dose
-		"1.2.840.10008.5.1.4.1.1.481.3", // RT Structure Set
-		"1.2.840.10008.5.1.4.1.1.481.5", // RT Plan
+		types.RTImageStorage,        // RT Image
+		types.RTDoseStorage,         // RT Dose
+		types.RTStructureSetStorage, // RT Structure Set
+		types.RTPlanStorage,         // RT Plan
 
 		// Query/Retrieve - Study Root
-		"1.2.840.10008.5.1.4.1.2.2.1", // Study Root FIND
-		"1.2.840.10008.5.1.4.1.2.2.2", // Study Root MOVE
-		"1.2.840.10008.5.1.4.1.2.2.3", // Study Root GET
+		types.StudyRootQueryRetrieveInformationModelFind, // Study Root FIND
+		types.StudyRootQueryRetrieveInformationModelMove, // Study Root MOVE
+		types.StudyRootQueryRetrieveInformationModelGet,  // Study Root GET
 
 		// Query/Retrieve - Patient Root
-		"1.2.840.10008.5.1.4.1.2.1.1", // Patient Root FIND
-		"1.2.840.10008.5.1.4.1.2.1.2", // Patient Root MOVE
-		"1.2.840.10008.5.1.4.1.2.1.3", // Patient Root GET
+		types.PatientRootQueryRetrieveInformationModelFind, // Patient Root FIND
+		types.PatientRootQueryRetrieveInformationModelMove, // Patient Root MOVE
+		types.PatientRootQueryRetrieveInformationModelGet,  // Patient Root GET
 
 		// Worklist
-		"1.2.840.10008.5.1.4.31", // Modality Worklist FIND
+		types.ModalityWorklistInformationModelFind, // Modality Worklist FIND
 	}
 }
 
@@ -321,14 +321,14 @@ func (a *Association) addUserInformation(buf []byte) []byte {
 	buf = append(buf, maxLengthBytes...)
 
 	// Implementation Class UID Sub-Item
-	implClassUID := "1.2.840.10008.1.2.1"
+	implClassUID := types.ImplementationClassUID
 	buf = append(buf, 0x52)                          // Item type
 	buf = append(buf, 0x00)                          // Reserved
 	buf = append(buf, 0x00, byte(len(implClassUID))) // Length
 	buf = append(buf, []byte(implClassUID)...)
 
 	// Implementation Version Name Sub-Item
-	implVersion := "DIMSE-POC-0.1"
+	implVersion := types.ImplementationVersionName
 	buf = append(buf, 0x55)                         // Item type
 	buf = append(buf, 0x00)                         // Reserved
 	buf = append(buf, 0x00, byte(len(implVersion))) // Length
