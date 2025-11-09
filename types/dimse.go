@@ -10,6 +10,7 @@ const (
 	CMoveRSP  = 0x8021
 	CEchoRQ   = 0x0030
 	CEchoRSP  = 0x8030
+	CCancelRQ = 0x0FFF
 )
 
 // DIMSE Status codes
@@ -31,6 +32,12 @@ type Message struct {
 	Status                    uint16
 	MessageIDBeingRespondedTo uint16
 	MoveDestination           string // For C-MOVE-RQ: the AE title of the move destination
+
+	// C-MOVE response counters
+	NumberOfRemainingSuboperations *uint16
+	NumberOfCompletedSuboperations *uint16
+	NumberOfFailedSuboperations    *uint16
+	NumberOfWarningSuboperations   *uint16
 }
 
 // ResponseCommandFor maps a DIMSE request command to its corresponding response command.
