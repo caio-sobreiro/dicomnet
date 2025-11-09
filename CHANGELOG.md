@@ -5,6 +5,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+- **Services package** (`services/`) with reusable DICOM service implementations
+  - `EchoService` - Complete C-ECHO verification service implementation
+  - `Registry` - Generic service registry/router for dispatching DIMSE messages to handlers
+  - Support for both single-response and streaming (multi-response) operations
+  - Dynamic handler registration/unregistration
+  - Comprehensive test coverage with integration tests
+  - Package documentation (README.md)
+- `CreateErrorResponse` utility function for standardized error responses
+
 ## [0.3.0] - 2025-11-09
 
 ### Added
