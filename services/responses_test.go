@@ -28,7 +28,7 @@ func TestResponseBuilder_CEchoResponse(t *testing.T) {
 		t.Errorf("Status = 0x%04x, want success", response.Status)
 	}
 
-	if response.AffectedSOPClassUID != "1.2.840.10008.1.1" {
+	if response.AffectedSOPClassUID != types.VerificationSOPClass {
 		t.Errorf("AffectedSOPClassUID = %s, want Verification SOP Class", response.AffectedSOPClassUID)
 	}
 

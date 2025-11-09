@@ -7,8 +7,6 @@ import (
 	"github.com/caio-sobreiro/dicomnet/types"
 )
 
-const verificationSOPClassUID = "1.2.840.10008.1.1"
-
 // CEchoResponse represents the result of a C-ECHO operation.
 type CEchoResponse struct {
 	Status    uint16
@@ -21,7 +19,7 @@ func (a *Association) SendCEcho(messageID uint16) (*CEchoResponse, error) {
 		messageID = 1
 	}
 
-	presContextID, err := a.GetPresentationContextID(verificationSOPClassUID)
+	presContextID, err := a.GetPresentationContextID(types.VerificationSOPClass)
 	if err != nil {
 		return nil, err
 	}
@@ -31,7 +29,7 @@ func (a *Association) SendCEcho(messageID uint16) (*CEchoResponse, error) {
 		MessageID:           messageID,
 		CommandDataSetType:  0x0101, // No dataset present
 		Priority:            0x0000, // Medium priority
-		AffectedSOPClassUID: verificationSOPClassUID,
+		AffectedSOPClassUID: types.VerificationSOPClass,
 	}
 
 	commandData, err := dimse.EncodeCommand(command)

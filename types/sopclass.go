@@ -1,5 +1,9 @@
 package types
 
+// DICOM Application Context UID
+// The Application Context defines the DICOM application-level message exchange rules.
+const ApplicationContextUID = "1.2.840.10008.3.1.1.1"
+
 // DICOM SOP Class UIDs as defined in DICOM Part 4, Annex B
 // https://dicom.nema.org/medical/dicom/current/output/chtml/part04/sect_B.5.html
 

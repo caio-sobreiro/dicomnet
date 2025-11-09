@@ -136,7 +136,7 @@ func TestTransferSyntaxNegotiation(t *testing.T) {
 
 	// Application Context
 	buf = append(buf, 0x10, 0x00) // Item type
-	appContext := "1.2.840.10008.3.1.1.1"
+	appContext := types.ApplicationContextUID
 	buf = binary.BigEndian.AppendUint16(buf, uint16(len(appContext)))
 	buf = append(buf, []byte(appContext)...)
 

@@ -265,10 +265,10 @@ func (s *sampleHandler) buildTransferSyntaxList(nativeTS string) []string {
 
 	// Add common transfer syntaxes as fallbacks (only if different from native)
 	common := []string{
-		"1.2.840.10008.1.2.1",    // Explicit VR Little Endian
-		"1.2.840.10008.1.2",      // Implicit VR Little Endian
-		"1.2.840.10008.1.2.4.90", // JPEG 2000 Lossless Only
-		"1.2.840.10008.1.2.4.91", // JPEG 2000
+		types.ExplicitVRLittleEndian, // Explicit VR Little Endian
+		types.ImplicitVRLittleEndian, // Implicit VR Little Endian
+		types.JPEG2000Lossless,       // JPEG 2000 Lossless Only
+		types.JPEG2000,               // JPEG 2000
 	}
 
 	for _, ts := range common {
@@ -317,7 +317,7 @@ func (s *sampleHandler) loadDicomFile(filepath string) error {
 
 	// Extract Transfer Syntax UID (0002,0010) from the file meta information
 	// This is in the first part of the file (before the dataset)
-	transferSyntax := "1.2.840.10008.1.2.1" // Default to Explicit VR Little Endian
+	transferSyntax := types.ExplicitVRLittleEndian // Default to Explicit VR Little Endian
 	if len(data) > 132 {
 		// Try to find transfer syntax in meta information (group 0x0002)
 		// For now, we'll use a simple approach - in production you'd parse the meta info properly
@@ -365,7 +365,7 @@ func (s *sampleHandler) loadDicomFile(filepath string) error {
 // generateSyntheticInstance creates a synthetic DICOM instance in memory
 func (s *sampleHandler) generateSyntheticInstance(sopInstanceUID, studyUID, seriesUID string) error {
 	// Build a minimal DICOM dataset with required tags
-	// Using Implicit VR Little Endian (1.2.840.10008.1.2)
+	// Using Implicit VR Little Endian
 	buf := make([]byte, 0, 512)
 
 	// Helper to append elements in Implicit VR format
@@ -380,7 +380,7 @@ func (s *sampleHandler) generateSyntheticInstance(sopInstanceUID, studyUID, seri
 	}
 
 	// SOP Class UID (0008,0016) - CT Image Storage
-	sopClassUID := "1.2.840.10008.5.1.4.1.1.2"
+	sopClassUID := types.CTImageStorage
 	appendElement(0x0008, 0x0016, "UI", []byte(sopClassUID))
 
 	// SOP Instance UID (0008,0018)
@@ -429,11 +429,10 @@ func (s *sampleHandler) generateSyntheticInstance(sopInstanceUID, studyUID, seri
 	appendElement(0x7FE0, 0x0010, "OW", []byte{})
 
 	instance := &DicomInstance{
-		SOPClassUID:    sopClassUID,
 		SOPInstanceUID: sopInstanceUID,
 		StudyUID:       studyUID,
 		SeriesUID:      seriesUID,
-		TransferSyntax: "1.2.840.10008.1.2", // Implicit VR Little Endian
+		TransferSyntax: types.ImplicitVRLittleEndian, // Implicit VR Little Endian
 		Data:           buf,
 	}
 

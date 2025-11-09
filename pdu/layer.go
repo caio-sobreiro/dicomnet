@@ -7,6 +7,8 @@ import (
 	"log/slog"
 	"net"
 	"strings"
+
+	"github.com/caio-sobreiro/dicomnet/types"
 )
 
 // PDU types
@@ -469,7 +471,7 @@ func (p *Layer) createAssociateAccept() []byte {
 	copy(fixedFields[20:36], fmt.Sprintf("%-16s", callingAE)) // Calling AE Title
 
 	// Application Context Item
-	appContextUID := "1.2.840.10008.3.1.1.1"
+	appContextUID := types.ApplicationContextUID
 	appContextItem := []byte{0x10, 0x00} // Item type
 	appContextLen := make([]byte, 2)
 	binary.BigEndian.PutUint16(appContextLen, uint16(len(appContextUID)))

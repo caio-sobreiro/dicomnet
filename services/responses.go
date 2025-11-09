@@ -31,8 +31,8 @@ func (b *ResponseBuilder) CEchoResponse(status uint16) *types.Message {
 	return &types.Message{
 		CommandField:              dimse.CEchoRSP,
 		MessageIDBeingRespondedTo: b.request.MessageID,
-		AffectedSOPClassUID:       "1.2.840.10008.1.1", // Verification SOP Class
-		CommandDataSetType:        0x0101,              // No Data Set Present
+		AffectedSOPClassUID:       types.VerificationSOPClass, // Verification SOP Class
+		CommandDataSetType:        0x0101,                     // No Data Set Present
 		Status:                    status,
 	}
 }
@@ -73,15 +73,15 @@ func (b *ResponseBuilder) CFindResponse(status uint16, hasDataset bool) *types.M
 // For the final response, use dimse.StatusSuccess.
 func (b *ResponseBuilder) CMoveResponse(status uint16, completed, failed, warning, remaining *uint16) *types.Message {
 	return &types.Message{
-		CommandField:                     dimse.CMoveRSP,
-		MessageIDBeingRespondedTo:        b.request.MessageID,
-		AffectedSOPClassUID:              b.request.AffectedSOPClassUID,
-		CommandDataSetType:               0x0101, // No Data Set Present
-		Status:                           status,
-		NumberOfCompletedSuboperations:   completed,
-		NumberOfFailedSuboperations:      failed,
-		NumberOfWarningSuboperations:     warning,
-		NumberOfRemainingSuboperations:   remaining,
+		CommandField:                   dimse.CMoveRSP,
+		MessageIDBeingRespondedTo:      b.request.MessageID,
+		AffectedSOPClassUID:            b.request.AffectedSOPClassUID,
+		CommandDataSetType:             0x0101, // No Data Set Present
+		Status:                         status,
+		NumberOfCompletedSuboperations: completed,
+		NumberOfFailedSuboperations:    failed,
+		NumberOfWarningSuboperations:   warning,
+		NumberOfRemainingSuboperations: remaining,
 	}
 }
 

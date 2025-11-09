@@ -364,7 +364,7 @@ func TestCreateErrorResponse(t *testing.T) {
 	req := &types.Message{
 		CommandField:        dimse.CEchoRQ,
 		MessageID:           42,
-		AffectedSOPClassUID: "1.2.840.10008.1.1",
+		AffectedSOPClassUID: types.VerificationSOPClass,
 	}
 
 	resp := CreateErrorResponse(req, dimse.StatusFailure)
@@ -403,7 +403,7 @@ func TestRegistry_Integration(t *testing.T) {
 	echoMsg := &types.Message{
 		CommandField:        dimse.CEchoRQ,
 		MessageID:           1,
-		AffectedSOPClassUID: "1.2.840.10008.1.1",
+		AffectedSOPClassUID: types.VerificationSOPClass,
 		CommandDataSetType:  0x0101,
 	}
 

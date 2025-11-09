@@ -58,8 +58,8 @@ func (s *EchoService) HandleDIMSE(ctx context.Context, msg *types.Message, data 
 	response := &types.Message{
 		CommandField:              dimse.CEchoRSP,
 		MessageIDBeingRespondedTo: msg.MessageID,
-		AffectedSOPClassUID:       "1.2.840.10008.1.1", // Verification SOP Class UID
-		CommandDataSetType:        0x0101,              // No Data Set Present
+		AffectedSOPClassUID:       types.VerificationSOPClass, // Verification SOP Class UID
+		CommandDataSetType:        0x0101,                     // No Data Set Present
 		Status:                    dimse.StatusSuccess,
 	}
 

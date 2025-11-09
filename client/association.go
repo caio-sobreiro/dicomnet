@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/caio-sobreiro/dicomnet/pdu"
+	"github.com/caio-sobreiro/dicomnet/types"
 )
 
 // Association represents a client-side DICOM association
@@ -89,8 +90,8 @@ func Connect(address string, config Config) (*Association, error) {
 	transferSyntaxes := config.PreferredTransferSyntaxes
 	if len(transferSyntaxes) == 0 {
 		transferSyntaxes = []string{
-			"1.2.840.10008.1.2.1", // Explicit VR Little Endian (default)
-			"1.2.840.10008.1.2",   // Implicit VR Little Endian
+			types.ExplicitVRLittleEndian, // Explicit VR Little Endian (default)
+			types.ImplicitVRLittleEndian, // Implicit VR Little Endian
 		}
 	}
 
@@ -226,10 +227,10 @@ func (a *Association) sendAssociateRQ() error {
 	buf = append(buf, make([]byte, 32)...)
 
 	// Application Context Item
-	buf = append(buf, 0x10)                               // Item type
-	buf = append(buf, 0x00)                               // Reserved
-	buf = append(buf, 0x00, 0x15)                         // Length
-	buf = append(buf, []byte("1.2.840.10008.3.1.1.1")...) // Application Context UID
+	buf = append(buf, 0x10)                                   // Item type
+	buf = append(buf, 0x00)                                   // Reserved
+	buf = append(buf, 0x00, 0x15)                             // Length
+	buf = append(buf, []byte(types.ApplicationContextUID)...) // Application Context UID
 
 	// Add Presentation Contexts for all SOP Classes
 	contextID := byte(1)

@@ -29,7 +29,7 @@ func TestEchoService_HandleDIMSE(t *testing.T) {
 			msg: &types.Message{
 				CommandField:        dimse.CEchoRQ,
 				MessageID:           1,
-				AffectedSOPClassUID: "1.2.840.10008.1.1",
+				AffectedSOPClassUID: types.VerificationSOPClass,
 				CommandDataSetType:  0x0101,
 			},
 			expectedStatus: dimse.StatusSuccess,
@@ -39,7 +39,7 @@ func TestEchoService_HandleDIMSE(t *testing.T) {
 			msg: &types.Message{
 				CommandField:        dimse.CEchoRQ,
 				MessageID:           42,
-				AffectedSOPClassUID: "1.2.840.10008.1.1",
+				AffectedSOPClassUID: types.VerificationSOPClass,
 				CommandDataSetType:  0x0101,
 			},
 			expectedStatus: dimse.StatusSuccess,
@@ -73,9 +73,9 @@ func TestEchoService_HandleDIMSE(t *testing.T) {
 					respMsg.MessageIDBeingRespondedTo, tt.msg.MessageID)
 			}
 
-			if respMsg.AffectedSOPClassUID != "1.2.840.10008.1.1" {
+			if respMsg.AffectedSOPClassUID != types.VerificationSOPClass {
 				t.Errorf("AffectedSOPClassUID = %s, want %s",
-					respMsg.AffectedSOPClassUID, "1.2.840.10008.1.1")
+					respMsg.AffectedSOPClassUID, types.VerificationSOPClass)
 			}
 
 			if respMsg.CommandDataSetType != 0x0101 {
@@ -100,7 +100,7 @@ func TestEchoService_HandleDIMSE_WithContext(t *testing.T) {
 	msg := &types.Message{
 		CommandField:        dimse.CEchoRQ,
 		MessageID:           1,
-		AffectedSOPClassUID: "1.2.840.10008.1.1",
+		AffectedSOPClassUID: types.VerificationSOPClass,
 		CommandDataSetType:  0x0101,
 	}
 

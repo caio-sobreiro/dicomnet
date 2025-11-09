@@ -8,8 +8,6 @@ import (
 	"github.com/caio-sobreiro/dicomnet/types"
 )
 
-const studyRootFindSOPClassUID = "1.2.840.10008.5.1.4.1.2.2.1"
-
 // CFindRequest encapsulates the information required to perform a C-FIND query.
 type CFindRequest struct {
 	SOPClassUID string
@@ -37,7 +35,7 @@ func (a *Association) SendCFind(req *CFindRequest) ([]*CFindResponse, error) {
 
 	sopClass := req.SOPClassUID
 	if sopClass == "" {
-		sopClass = studyRootFindSOPClassUID
+		sopClass = types.StudyRootQueryRetrieveInformationModelFind
 	}
 
 	messageID := req.MessageID

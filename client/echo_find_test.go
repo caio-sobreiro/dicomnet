@@ -20,7 +20,7 @@ func TestSendCEcho(t *testing.T) {
 		presentationCtxs: map[byte]*PresentationContext{
 			7: {
 				ID:             7,
-				AbstractSyntax: verificationSOPClassUID,
+				AbstractSyntax: types.VerificationSOPClass,
 				Accepted:       true,
 			},
 		},
@@ -32,7 +32,7 @@ func TestSendCEcho(t *testing.T) {
 		MessageIDBeingRespondedTo: 1,
 		CommandDataSetType:        0x0101,
 		Status:                    dimse.StatusSuccess,
-		AffectedSOPClassUID:       verificationSOPClassUID,
+		AffectedSOPClassUID:       types.VerificationSOPClass,
 	})
 
 	conn.readBuf.Write(buildPDataPDU(7, true, true, command))
@@ -65,7 +65,7 @@ func TestSendCFind(t *testing.T) {
 		presentationCtxs: map[byte]*PresentationContext{
 			9: {
 				ID:             9,
-				AbstractSyntax: studyRootFindSOPClassUID,
+				AbstractSyntax: types.StudyRootQueryRetrieveInformationModelFind,
 				Accepted:       true,
 			},
 		},
@@ -85,7 +85,7 @@ func TestSendCFind(t *testing.T) {
 		MessageIDBeingRespondedTo: 2,
 		CommandDataSetType:        0x0000,
 		Status:                    dimse.StatusPending,
-		AffectedSOPClassUID:       studyRootFindSOPClassUID,
+		AffectedSOPClassUID:       types.StudyRootQueryRetrieveInformationModelFind,
 	})
 
 	finalCommand := buildCommandDataset(&types.Message{
@@ -93,7 +93,7 @@ func TestSendCFind(t *testing.T) {
 		MessageIDBeingRespondedTo: 2,
 		CommandDataSetType:        0x0101,
 		Status:                    dimse.StatusSuccess,
-		AffectedSOPClassUID:       studyRootFindSOPClassUID,
+		AffectedSOPClassUID:       types.StudyRootQueryRetrieveInformationModelFind,
 	})
 
 	conn.readBuf.Write(buildPDataPDU(9, true, true, pendingCommand))

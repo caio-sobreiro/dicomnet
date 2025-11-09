@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/caio-sobreiro/dicomnet/dimse"
+	"github.com/caio-sobreiro/dicomnet/types"
 )
 
 func TestSendCCancel(t *testing.T) {
@@ -18,7 +19,7 @@ func TestSendCCancel(t *testing.T) {
 		presentationCtxs: map[byte]*PresentationContext{
 			9: {
 				ID:             9,
-				AbstractSyntax: studyRootFindSOPClassUID,
+				AbstractSyntax: types.StudyRootQueryRetrieveInformationModelFind,
 				Accepted:       true,
 			},
 		},
@@ -26,7 +27,7 @@ func TestSendCCancel(t *testing.T) {
 	}
 
 	// Send C-CANCEL for message ID 5
-	err := assoc.SendCCancel(5, studyRootFindSOPClassUID)
+	err := assoc.SendCCancel(5, types.StudyRootQueryRetrieveInformationModelFind)
 	if err != nil {
 		t.Fatalf("SendCCancel returned error: %v", err)
 	}
@@ -122,7 +123,7 @@ func TestSendCCancelErrors(t *testing.T) {
 		presentationCtxs: map[byte]*PresentationContext{
 			9: {
 				ID:             9,
-				AbstractSyntax: studyRootFindSOPClassUID,
+				AbstractSyntax: types.StudyRootQueryRetrieveInformationModelFind,
 				Accepted:       true,
 			},
 		},
@@ -130,7 +131,7 @@ func TestSendCCancelErrors(t *testing.T) {
 	}
 
 	// Test zero message ID
-	err := assoc.SendCCancel(0, studyRootFindSOPClassUID)
+	err := assoc.SendCCancel(0, types.StudyRootQueryRetrieveInformationModelFind)
 	if err == nil {
 		t.Fatal("Expected error for zero messageID, got nil")
 	}
