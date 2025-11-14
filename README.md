@@ -24,13 +24,6 @@ Application Layer
    Transport (TCP/IP)
 ```
 
-## Usage
-
-This package is used by:
-- **`pkg/client/`** - DICOM client (SCU) implementation
-- **`pkg/server/`** - DICOM server (SCP) implementation (future)
-- **`internal/services/`** - Application-specific service handlers
-
 ## Logging
 
 The library uses Go's standard `log/slog` package for logging. You can inject a custom logger when creating a server using the `WithLogger` option:
@@ -43,10 +36,6 @@ server := server.New("MY_AE_TITLE", handler, server.WithLogger(logger))
 ```
 
 If no logger is provided, the library will use `slog.Default()`.
-
-## Usage
-
-Currently used by the DIMSE proxy server in this repository. Will be published as a standalone library once client implementation is complete.
 
 ### Server Example
 
