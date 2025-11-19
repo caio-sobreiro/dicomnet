@@ -4,7 +4,9 @@ import (
 	"context"
 	"testing"
 
+	"github.com/caio-sobreiro/dicomnet/dicom"
 	"github.com/caio-sobreiro/dicomnet/dimse"
+	"github.com/caio-sobreiro/dicomnet/interfaces"
 	"github.com/caio-sobreiro/dicomnet/types"
 )
 
@@ -48,7 +50,10 @@ func TestEchoService_HandleDIMSE(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			respMsg, respData, err := service.HandleDIMSE(ctx, tt.msg, nil)
+			respMsg, respData, err := service.HandleDIMSE(ctx, tt.msg, nil, interfaces.MessageContext{
+				PresentationContextID: 1,
+				TransferSyntaxUID:     dicom.TransferSyntaxExplicitVRLittleEndian,
+			})
 
 			if err != nil {
 				t.Fatalf("HandleDIMSE() error = %v", err)
@@ -104,7 +109,10 @@ func TestEchoService_HandleDIMSE_WithContext(t *testing.T) {
 		CommandDataSetType:  0x0101,
 	}
 
-	respMsg, _, err := service.HandleDIMSE(ctx, msg, nil)
+	respMsg, _, err := service.HandleDIMSE(ctx, msg, nil, interfaces.MessageContext{
+		PresentationContextID: 1,
+		TransferSyntaxUID:     dicom.TransferSyntaxExplicitVRLittleEndian,
+	})
 	if err != nil {
 		t.Fatalf("HandleDIMSE() error = %v", err)
 	}

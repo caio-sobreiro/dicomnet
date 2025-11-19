@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log/slog"
 
+	"github.com/caio-sobreiro/dicomnet/dicom"
 	"github.com/caio-sobreiro/dicomnet/interfaces"
 	"github.com/caio-sobreiro/dicomnet/types"
 )
@@ -73,12 +74,13 @@ func (r *Registry) UnregisterHandler(commandField uint16) {
 //   - ctx: Context for cancellation and request tracking
 //   - msg: The incoming DIMSE command message
 //   - data: The optional dataset associated with the message
+//   - meta: Metadata describing the message transport context
 //
 // Returns:
 //   - Response DIMSE message
 //   - Response dataset (if any)
 //   - Error if handling fails or no handler is registered
-func (r *Registry) HandleDIMSE(ctx context.Context, msg *types.Message, data []byte) (*types.Message, []byte, error) {
+func (r *Registry) HandleDIMSE(ctx context.Context, msg *types.Message, data []byte, meta interfaces.MessageContext) (*types.Message, *dicom.Dataset, error) {
 	slog.DebugContext(ctx, "Routing DIMSE message",
 		"command_field", fmt.Sprintf("0x%04x", msg.CommandField),
 		"message_id", msg.MessageID)
@@ -90,7 +92,7 @@ func (r *Registry) HandleDIMSE(ctx context.Context, msg *types.Message, data []b
 		return nil, nil, fmt.Errorf("unsupported DIMSE command: 0x%04x", msg.CommandField)
 	}
 
-	return handler.HandleDIMSE(ctx, msg, data)
+	return handler.HandleDIMSE(ctx, msg, data, meta)
 }
 
 // HandleDIMSEStreaming routes streaming DIMSE messages to appropriate service handlers.
@@ -106,11 +108,12 @@ func (r *Registry) HandleDIMSE(ctx context.Context, msg *types.Message, data []b
 //   - ctx: Context for cancellation and request tracking
 //   - msg: The incoming DIMSE command message
 //   - data: The optional dataset associated with the message
+//   - meta: Metadata describing the message transport context
 //   - responder: Interface for sending multiple responses
 //
 // Returns:
 //   - Error if handling fails or no handler is registered
-func (r *Registry) HandleDIMSEStreaming(ctx context.Context, msg *types.Message, data []byte, responder interfaces.ResponseSender) error {
+func (r *Registry) HandleDIMSEStreaming(ctx context.Context, msg *types.Message, data []byte, meta interfaces.MessageContext, responder interfaces.ResponseSender) error {
 	slog.DebugContext(ctx, "Routing streaming DIMSE message",
 		"command_field", fmt.Sprintf("0x%04x", msg.CommandField),
 		"message_id", msg.MessageID)
@@ -124,15 +127,15 @@ func (r *Registry) HandleDIMSEStreaming(ctx context.Context, msg *types.Message,
 
 	// Check if handler supports streaming
 	if streamingHandler, ok := handler.(interfaces.StreamingServiceHandler); ok {
-		return streamingHandler.HandleDIMSEStreaming(ctx, msg, data, responder)
+		return streamingHandler.HandleDIMSEStreaming(ctx, msg, data, meta, responder)
 	}
 
 	// Fallback to single-response handler
-	responseMsg, responseData, err := handler.HandleDIMSE(ctx, msg, data)
+	responseMsg, responseDataset, err := handler.HandleDIMSE(ctx, msg, data, meta)
 	if err != nil {
 		return err
 	}
-	return responder.SendResponse(responseMsg, responseData)
+	return responder.SendResponse(responseMsg, responseDataset, meta.TransferSyntaxUID)
 }
 
 // HasHandler returns true if a handler is registered for the given command field.

@@ -34,6 +34,7 @@ type Message struct {
 	Status                    uint16
 	MessageIDBeingRespondedTo uint16
 	MoveDestination           string // For C-MOVE-RQ: the AE title of the move destination
+	TransferSyntaxUID         string // Negotiated transfer syntax for associated dataset
 
 	// C-MOVE and C-GET response counters
 	NumberOfRemainingSuboperations *uint16

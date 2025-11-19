@@ -35,7 +35,14 @@ type sampleHandler struct {
 	mu        sync.RWMutex
 }
 
-func (s *sampleHandler) HandleDIMSE(ctx context.Context, msg *types.Message, data []byte) (*types.Message, []byte, error) {
+func responseTransferSyntax(meta interfaces.MessageContext) string {
+	if meta.TransferSyntaxUID != "" {
+		return meta.TransferSyntaxUID
+	}
+	return dicom.TransferSyntaxExplicitVRLittleEndian
+}
+
+func (s *sampleHandler) HandleDIMSE(ctx context.Context, msg *types.Message, data []byte, meta interfaces.MessageContext) (*types.Message, *dicom.Dataset, error) {
 	slog.InfoContext(ctx, "Received DIMSE command", "command_field", fmt.Sprintf("0x%04X", msg.CommandField), "message_id", msg.MessageID)
 
 	switch msg.CommandField {
@@ -64,7 +71,7 @@ func (s *sampleHandler) HandleDIMSE(ctx context.Context, msg *types.Message, dat
 		return response, nil, nil
 
 	case types.CMoveRQ:
-		return s.handleCMove(ctx, msg, data)
+		return s.handleCMove(ctx, msg, data, meta)
 
 	default:
 		response := &types.Message{
@@ -79,25 +86,25 @@ func (s *sampleHandler) HandleDIMSE(ctx context.Context, msg *types.Message, dat
 	}
 }
 
-func (s *sampleHandler) HandleDIMSEStreaming(ctx context.Context, msg *types.Message, data []byte, responder interfaces.ResponseSender) error {
+func (s *sampleHandler) HandleDIMSEStreaming(ctx context.Context, msg *types.Message, data []byte, meta interfaces.MessageContext, responder interfaces.ResponseSender) error {
 	switch msg.CommandField {
 	case types.CFindRQ:
-		return s.handleCFindStreaming(ctx, msg, data, responder)
+		return s.handleCFindStreaming(ctx, msg, data, meta, responder)
 	case types.CMoveRQ:
-		return s.handleCMoveStreaming(ctx, msg, data, responder)
+		return s.handleCMoveStreaming(ctx, msg, data, meta, responder)
 	case types.CGetRQ:
-		return s.handleCGetStreaming(ctx, msg, data, responder)
+		return s.handleCGetStreaming(ctx, msg, data, meta, responder)
 	default:
 		// Fall back to non-streaming handler
-		response, payload, err := s.HandleDIMSE(ctx, msg, data)
+		response, dataset, err := s.HandleDIMSE(ctx, msg, data, meta)
 		if err != nil {
 			return err
 		}
-		return responder.SendResponse(response, payload)
+		return responder.SendResponse(response, dataset, responseTransferSyntax(meta))
 	}
 }
 
-func (s *sampleHandler) handleCFindStreaming(ctx context.Context, msg *types.Message, data []byte, responder interfaces.ResponseSender) error {
+func (s *sampleHandler) handleCFindStreaming(ctx context.Context, msg *types.Message, data []byte, meta interfaces.MessageContext, responder interfaces.ResponseSender) error {
 	slog.InfoContext(ctx, "Handling C-FIND request", "message_id", msg.MessageID)
 
 	// Create mock study result
@@ -111,8 +118,6 @@ func (s *sampleHandler) handleCFindStreaming(ctx context.Context, msg *types.Mes
 	dataset.AddElement(dicom.Tag{Group: 0x0008, Element: 0x0050}, dicom.VR_SH, "ACC123")
 	dataset.AddElement(dicom.Tag{Group: 0x0008, Element: 0x1030}, dicom.VR_LO, "Test Study")
 
-	encoded := dataset.EncodeDataset()
-
 	// Send PENDING response with the match
 	pendingResponse := &types.Message{
 		CommandField:              types.CFindRSP,
@@ -122,7 +127,7 @@ func (s *sampleHandler) handleCFindStreaming(ctx context.Context, msg *types.Mes
 		Status:                    types.StatusPending,
 	}
 	slog.InfoContext(ctx, "Sending C-FIND pending response with match", "message_id", msg.MessageID)
-	if err := responder.SendResponse(pendingResponse, encoded); err != nil {
+	if err := responder.SendResponse(pendingResponse, dataset, responseTransferSyntax(meta)); err != nil {
 		return err
 	}
 
@@ -135,17 +140,21 @@ func (s *sampleHandler) handleCFindStreaming(ctx context.Context, msg *types.Mes
 		Status:                    types.StatusSuccess,
 	}
 	slog.InfoContext(ctx, "Sending C-FIND final success response", "message_id", msg.MessageID)
-	return responder.SendResponse(finalResponse, nil)
+	return responder.SendResponse(finalResponse, nil, responseTransferSyntax(meta))
 }
 
-func (s *sampleHandler) handleCMoveStreaming(ctx context.Context, msg *types.Message, data []byte, responder interfaces.ResponseSender) error {
+func (s *sampleHandler) handleCMoveStreaming(ctx context.Context, msg *types.Message, data []byte, meta interfaces.MessageContext, responder interfaces.ResponseSender) error {
 	slog.InfoContext(ctx, "Received C-MOVE request", "move_destination", msg.MoveDestination)
 
-	dataset, err := dicom.ParseDataset(data)
-	if err != nil {
-		slog.ErrorContext(ctx, "Failed to parse C-MOVE dataset", "error", err)
-		failure := buildMoveResponse(msg, types.StatusFailure, 0, 0, 0, 0)
-		return responder.SendResponse(failure, nil)
+	dataset := meta.Dataset
+	if dataset == nil {
+		var err error
+		dataset, err = dicom.ParseDatasetWithTransferSyntax(data, meta.TransferSyntaxUID)
+		if err != nil {
+			slog.ErrorContext(ctx, "Failed to parse C-MOVE dataset", "error", err)
+			failure := buildMoveResponse(msg, types.StatusFailure, 0, 0, 0, 0)
+			return responder.SendResponse(failure, nil, responseTransferSyntax(meta))
+		}
 	}
 
 	logCMoveRequest(ctx, msg, dataset)
@@ -163,7 +172,7 @@ func (s *sampleHandler) handleCMoveStreaming(ctx context.Context, msg *types.Mes
 	if totalInstances == 0 {
 		// No matches - send success with 0 completed
 		final := buildMoveResponse(msg, types.StatusSuccess, 0, 0, 0, 0)
-		return responder.SendResponse(final, nil)
+		return responder.SendResponse(final, nil, responseTransferSyntax(meta))
 	}
 
 	// Perform C-STORE sub-operations
@@ -176,7 +185,7 @@ func (s *sampleHandler) handleCMoveStreaming(ctx context.Context, msg *types.Mes
 
 		// Send pending status before each transfer
 		pending := buildMoveResponse(msg, types.StatusPending, remaining, completed, failed, warning)
-		if err := responder.SendResponse(pending, nil); err != nil {
+		if err := responder.SendResponse(pending, nil, responseTransferSyntax(meta)); err != nil {
 			return err
 		}
 
@@ -193,17 +202,21 @@ func (s *sampleHandler) handleCMoveStreaming(ctx context.Context, msg *types.Mes
 
 	// Send final success response
 	final := buildMoveResponse(msg, types.StatusSuccess, 0, completed, failed, warning)
-	return responder.SendResponse(final, nil)
+	return responder.SendResponse(final, nil, responseTransferSyntax(meta))
 }
 
-func (s *sampleHandler) handleCGetStreaming(ctx context.Context, msg *types.Message, data []byte, responder interfaces.ResponseSender) error {
+func (s *sampleHandler) handleCGetStreaming(ctx context.Context, msg *types.Message, data []byte, meta interfaces.MessageContext, responder interfaces.ResponseSender) error {
 	slog.InfoContext(ctx, "Received C-GET request")
 
-	dataset, err := dicom.ParseDataset(data)
-	if err != nil {
-		slog.ErrorContext(ctx, "Failed to parse C-GET dataset", "error", err)
-		failure := buildGetResponse(msg, types.StatusFailure, 0, 0, 0, 0)
-		return responder.SendResponse(failure, nil)
+	dataset := meta.Dataset
+	if dataset == nil {
+		var err error
+		dataset, err = dicom.ParseDatasetWithTransferSyntax(data, meta.TransferSyntaxUID)
+		if err != nil {
+			slog.ErrorContext(ctx, "Failed to parse C-GET dataset", "error", err)
+			failure := buildGetResponse(msg, types.StatusFailure, 0, 0, 0, 0)
+			return responder.SendResponse(failure, nil, responseTransferSyntax(meta))
+		}
 	}
 
 	logCGetRequest(ctx, msg, dataset)
@@ -221,7 +234,7 @@ func (s *sampleHandler) handleCGetStreaming(ctx context.Context, msg *types.Mess
 	if totalInstances == 0 {
 		// No matches - send success with 0 completed
 		final := buildGetResponse(msg, types.StatusSuccess, 0, 0, 0, 0)
-		return responder.SendResponse(final, nil)
+		return responder.SendResponse(final, nil, responseTransferSyntax(meta))
 	}
 
 	// Check if responder supports C-STORE sub-operations
@@ -229,7 +242,7 @@ func (s *sampleHandler) handleCGetStreaming(ctx context.Context, msg *types.Mess
 	if !ok {
 		slog.ErrorContext(ctx, "Responder does not support C-GET operations")
 		failure := buildGetResponse(msg, types.StatusFailure, 0, 0, 0, 0)
-		return responder.SendResponse(failure, nil)
+		return responder.SendResponse(failure, nil, responseTransferSyntax(meta))
 	}
 
 	// Perform C-STORE sub-operations on the same association
@@ -242,7 +255,7 @@ func (s *sampleHandler) handleCGetStreaming(ctx context.Context, msg *types.Mess
 
 		// Send pending status before each transfer
 		pending := buildGetResponse(msg, types.StatusPending, remaining, completed, failed, warning)
-		if err := responder.SendResponse(pending, nil); err != nil {
+		if err := responder.SendResponse(pending, nil, responseTransferSyntax(meta)); err != nil {
 			return err
 		}
 
@@ -259,7 +272,7 @@ func (s *sampleHandler) handleCGetStreaming(ctx context.Context, msg *types.Mess
 
 	// Send final success response
 	final := buildGetResponse(msg, types.StatusSuccess, 0, completed, failed, warning)
-	return responder.SendResponse(final, nil)
+	return responder.SendResponse(final, nil, responseTransferSyntax(meta))
 }
 
 func (s *sampleHandler) findMatchingInstances(studyUID, seriesUID, sopUID string) []*DicomInstance {
@@ -348,12 +361,16 @@ func (s *sampleHandler) buildTransferSyntaxList(nativeTS string) []string {
 	return syntaxes
 }
 
-func (s *sampleHandler) handleCMove(ctx context.Context, msg *types.Message, data []byte) (*types.Message, []byte, error) {
-	dataset, err := dicom.ParseDataset(data)
-	if err != nil {
-		slog.ErrorContext(ctx, "Failed to parse C-MOVE dataset", "error", err)
-		failure := buildMoveResponse(msg, types.StatusFailure, 0, 0, 0, 0)
-		return failure, nil, nil
+func (s *sampleHandler) handleCMove(ctx context.Context, msg *types.Message, data []byte, meta interfaces.MessageContext) (*types.Message, *dicom.Dataset, error) {
+	dataset := meta.Dataset
+	if dataset == nil {
+		var err error
+		dataset, err = dicom.ParseDatasetWithTransferSyntax(data, meta.TransferSyntaxUID)
+		if err != nil {
+			slog.ErrorContext(ctx, "Failed to parse C-MOVE dataset", "error", err)
+			failure := buildMoveResponse(msg, types.StatusFailure, 0, 0, 0, 0)
+			return failure, nil, nil
+		}
 	}
 
 	logCMoveRequest(ctx, msg, dataset)

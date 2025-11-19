@@ -5,6 +5,7 @@ import (
 	"errors"
 	"testing"
 
+	"github.com/caio-sobreiro/dicomnet/dicom"
 	"github.com/caio-sobreiro/dicomnet/dimse"
 	"github.com/caio-sobreiro/dicomnet/interfaces"
 	"github.com/caio-sobreiro/dicomnet/types"
@@ -12,12 +13,12 @@ import (
 
 // mockHandler implements interfaces.ServiceHandler
 type mockHandler struct {
-	handleFunc func(ctx context.Context, msg *types.Message, data []byte) (*types.Message, []byte, error)
+	handleFunc func(ctx context.Context, msg *types.Message, data []byte, meta interfaces.MessageContext) (*types.Message, *dicom.Dataset, error)
 }
 
-func (m *mockHandler) HandleDIMSE(ctx context.Context, msg *types.Message, data []byte) (*types.Message, []byte, error) {
+func (m *mockHandler) HandleDIMSE(ctx context.Context, msg *types.Message, data []byte, meta interfaces.MessageContext) (*types.Message, *dicom.Dataset, error) {
 	if m.handleFunc != nil {
-		return m.handleFunc(ctx, msg, data)
+		return m.handleFunc(ctx, msg, data, meta)
 	}
 	return &types.Message{
 		CommandField:              msg.CommandField | 0x8000,
@@ -28,13 +29,13 @@ func (m *mockHandler) HandleDIMSE(ctx context.Context, msg *types.Message, data 
 
 // mockStreamingHandler implements both interfaces.ServiceHandler and interfaces.StreamingServiceHandler
 type mockStreamingHandler struct {
-	handleFunc          func(ctx context.Context, msg *types.Message, data []byte) (*types.Message, []byte, error)
-	handleStreamingFunc func(ctx context.Context, msg *types.Message, data []byte, responder interfaces.ResponseSender) error
+	handleFunc          func(ctx context.Context, msg *types.Message, data []byte, meta interfaces.MessageContext) (*types.Message, *dicom.Dataset, error)
+	handleStreamingFunc func(ctx context.Context, msg *types.Message, data []byte, meta interfaces.MessageContext, responder interfaces.ResponseSender) error
 }
 
-func (m *mockStreamingHandler) HandleDIMSE(ctx context.Context, msg *types.Message, data []byte) (*types.Message, []byte, error) {
+func (m *mockStreamingHandler) HandleDIMSE(ctx context.Context, msg *types.Message, data []byte, meta interfaces.MessageContext) (*types.Message, *dicom.Dataset, error) {
 	if m.handleFunc != nil {
-		return m.handleFunc(ctx, msg, data)
+		return m.handleFunc(ctx, msg, data, meta)
 	}
 	return &types.Message{
 		CommandField:              msg.CommandField | 0x8000,
@@ -43,31 +44,46 @@ func (m *mockStreamingHandler) HandleDIMSE(ctx context.Context, msg *types.Messa
 	}, nil, nil
 }
 
-func (m *mockStreamingHandler) HandleDIMSEStreaming(ctx context.Context, msg *types.Message, data []byte, responder interfaces.ResponseSender) error {
+func (m *mockStreamingHandler) HandleDIMSEStreaming(ctx context.Context, msg *types.Message, data []byte, meta interfaces.MessageContext, responder interfaces.ResponseSender) error {
 	if m.handleStreamingFunc != nil {
-		return m.handleStreamingFunc(ctx, msg, data, responder)
+		return m.handleStreamingFunc(ctx, msg, data, meta, responder)
 	}
 	return responder.SendResponse(&types.Message{
 		CommandField:              msg.CommandField | 0x8000,
 		MessageIDBeingRespondedTo: msg.MessageID,
 		Status:                    dimse.StatusSuccess,
-	}, nil)
+	}, nil, meta.TransferSyntaxUID)
 }
 
 // mockResponder implements interfaces.ResponseSender
 type mockResponder struct {
-	responses []*types.Message
-	data      [][]byte
-	sendFunc  func(msg *types.Message, data []byte) error
+	responses         []*types.Message
+	datasets          []*dicom.Dataset
+	transferSyntaxUID []string
+	sendFunc          func(msg *types.Message, dataset *dicom.Dataset, transferSyntaxUID string) error
 }
 
-func (m *mockResponder) SendResponse(msg *types.Message, data []byte) error {
+func (m *mockResponder) SendResponse(msg *types.Message, dataset *dicom.Dataset, transferSyntaxUID string) error {
 	if m.sendFunc != nil {
-		return m.sendFunc(msg, data)
+		return m.sendFunc(msg, dataset, transferSyntaxUID)
 	}
 	m.responses = append(m.responses, msg)
-	m.data = append(m.data, data)
+	m.datasets = append(m.datasets, dataset)
+	m.transferSyntaxUID = append(m.transferSyntaxUID, transferSyntaxUID)
 	return nil
+}
+
+func testMeta() interfaces.MessageContext {
+	return interfaces.MessageContext{
+		PresentationContextID: 1,
+		TransferSyntaxUID:     dicom.TransferSyntaxExplicitVRLittleEndian,
+	}
+}
+
+func sampleDataset() *dicom.Dataset {
+	dataset := dicom.NewDataset()
+	dataset.AddElement(dicom.Tag{Group: 0x0008, Element: 0x0018}, dicom.VR_UI, "1.2.3.4.5")
+	return dataset
 }
 
 func TestNewRegistry(t *testing.T) {
@@ -103,12 +119,12 @@ func TestRegistry_RegisterHandler(t *testing.T) {
 func TestRegistry_RegisterHandler_Replace(t *testing.T) {
 	registry := NewRegistry()
 	handler1 := &mockHandler{
-		handleFunc: func(ctx context.Context, msg *types.Message, data []byte) (*types.Message, []byte, error) {
+		handleFunc: func(ctx context.Context, msg *types.Message, data []byte, meta interfaces.MessageContext) (*types.Message, *dicom.Dataset, error) {
 			return &types.Message{Status: 1}, nil, nil
 		},
 	}
 	handler2 := &mockHandler{
-		handleFunc: func(ctx context.Context, msg *types.Message, data []byte) (*types.Message, []byte, error) {
+		handleFunc: func(ctx context.Context, msg *types.Message, data []byte, meta interfaces.MessageContext) (*types.Message, *dicom.Dataset, error) {
 			return &types.Message{Status: 2}, nil, nil
 		},
 	}
@@ -122,7 +138,7 @@ func TestRegistry_RegisterHandler_Replace(t *testing.T) {
 		MessageID:    1,
 	}
 
-	resp, _, _ := registry.HandleDIMSE(ctx, msg, nil)
+	resp, _, _ := registry.HandleDIMSE(ctx, msg, nil, testMeta())
 	if resp.Status != 2 {
 		t.Errorf("Expected status 2 from second handler, got %d", resp.Status)
 	}
@@ -148,7 +164,7 @@ func TestRegistry_HandleDIMSE(t *testing.T) {
 	ctx := context.Background()
 
 	handler := &mockHandler{
-		handleFunc: func(ctx context.Context, msg *types.Message, data []byte) (*types.Message, []byte, error) {
+		handleFunc: func(ctx context.Context, msg *types.Message, data []byte, meta interfaces.MessageContext) (*types.Message, *dicom.Dataset, error) {
 			return &types.Message{
 				CommandField:              dimse.CEchoRSP,
 				MessageIDBeingRespondedTo: msg.MessageID,
@@ -164,7 +180,7 @@ func TestRegistry_HandleDIMSE(t *testing.T) {
 		MessageID:    42,
 	}
 
-	resp, data, err := registry.HandleDIMSE(ctx, msg, nil)
+	resp, dataset, err := registry.HandleDIMSE(ctx, msg, nil, testMeta())
 	if err != nil {
 		t.Fatalf("HandleDIMSE() error = %v", err)
 	}
@@ -181,7 +197,7 @@ func TestRegistry_HandleDIMSE(t *testing.T) {
 		t.Errorf("MessageIDBeingRespondedTo = %d, want 42", resp.MessageIDBeingRespondedTo)
 	}
 
-	if data != nil {
+	if dataset != nil {
 		t.Error("Expected nil data")
 	}
 }
@@ -195,7 +211,7 @@ func TestRegistry_HandleDIMSE_NoHandler(t *testing.T) {
 		MessageID:    1,
 	}
 
-	_, _, err := registry.HandleDIMSE(ctx, msg, nil)
+	_, _, err := registry.HandleDIMSE(ctx, msg, nil, testMeta())
 	if err == nil {
 		t.Error("Expected error for unregistered command")
 	}
@@ -207,7 +223,7 @@ func TestRegistry_HandleDIMSE_HandlerError(t *testing.T) {
 
 	expectedErr := errors.New("handler error")
 	handler := &mockHandler{
-		handleFunc: func(ctx context.Context, msg *types.Message, data []byte) (*types.Message, []byte, error) {
+		handleFunc: func(ctx context.Context, msg *types.Message, data []byte, meta interfaces.MessageContext) (*types.Message, *dicom.Dataset, error) {
 			return nil, nil, expectedErr
 		},
 	}
@@ -219,7 +235,7 @@ func TestRegistry_HandleDIMSE_HandlerError(t *testing.T) {
 		MessageID:    1,
 	}
 
-	_, _, err := registry.HandleDIMSE(ctx, msg, nil)
+	_, _, err := registry.HandleDIMSE(ctx, msg, nil, testMeta())
 	if err != expectedErr {
 		t.Errorf("Expected error %v, got %v", expectedErr, err)
 	}
@@ -230,14 +246,14 @@ func TestRegistry_HandleDIMSEStreaming_StreamingHandler(t *testing.T) {
 	ctx := context.Background()
 
 	handler := &mockStreamingHandler{
-		handleStreamingFunc: func(ctx context.Context, msg *types.Message, data []byte, responder interfaces.ResponseSender) error {
+		handleStreamingFunc: func(ctx context.Context, msg *types.Message, data []byte, meta interfaces.MessageContext, responder interfaces.ResponseSender) error {
 			// Send multiple responses (simulating C-FIND)
 			for i := 0; i < 3; i++ {
 				if err := responder.SendResponse(&types.Message{
 					CommandField:              dimse.CFindRSP,
 					MessageIDBeingRespondedTo: msg.MessageID,
 					Status:                    dimse.StatusPending,
-				}, nil); err != nil {
+				}, nil, meta.TransferSyntaxUID); err != nil {
 					return err
 				}
 			}
@@ -246,7 +262,7 @@ func TestRegistry_HandleDIMSEStreaming_StreamingHandler(t *testing.T) {
 				CommandField:              dimse.CFindRSP,
 				MessageIDBeingRespondedTo: msg.MessageID,
 				Status:                    dimse.StatusSuccess,
-			}, nil)
+			}, nil, meta.TransferSyntaxUID)
 		},
 	}
 
@@ -258,7 +274,7 @@ func TestRegistry_HandleDIMSEStreaming_StreamingHandler(t *testing.T) {
 	}
 
 	responder := &mockResponder{}
-	err := registry.HandleDIMSEStreaming(ctx, msg, nil, responder)
+	err := registry.HandleDIMSEStreaming(ctx, msg, nil, testMeta(), responder)
 	if err != nil {
 		t.Fatalf("HandleDIMSEStreaming() error = %v", err)
 	}
@@ -286,12 +302,12 @@ func TestRegistry_HandleDIMSEStreaming_NonStreamingHandler(t *testing.T) {
 
 	// Register a non-streaming handler
 	handler := &mockHandler{
-		handleFunc: func(ctx context.Context, msg *types.Message, data []byte) (*types.Message, []byte, error) {
+		handleFunc: func(ctx context.Context, msg *types.Message, data []byte, meta interfaces.MessageContext) (*types.Message, *dicom.Dataset, error) {
 			return &types.Message{
 				CommandField:              dimse.CEchoRSP,
 				MessageIDBeingRespondedTo: msg.MessageID,
 				Status:                    dimse.StatusSuccess,
-			}, []byte("test data"), nil
+			}, sampleDataset(), nil
 		},
 	}
 
@@ -303,7 +319,7 @@ func TestRegistry_HandleDIMSEStreaming_NonStreamingHandler(t *testing.T) {
 	}
 
 	responder := &mockResponder{}
-	err := registry.HandleDIMSEStreaming(ctx, msg, nil, responder)
+	err := registry.HandleDIMSEStreaming(ctx, msg, nil, testMeta(), responder)
 	if err != nil {
 		t.Fatalf("HandleDIMSEStreaming() error = %v", err)
 	}
@@ -312,8 +328,18 @@ func TestRegistry_HandleDIMSEStreaming_NonStreamingHandler(t *testing.T) {
 		t.Errorf("Expected 1 response, got %d", len(responder.responses))
 	}
 
-	if string(responder.data[0]) != "test data" {
-		t.Errorf("Expected 'test data', got %s", string(responder.data[0]))
+	if len(responder.datasets) != 1 {
+		t.Fatalf("Expected one dataset, got %d", len(responder.datasets))
+	}
+
+	if responder.datasets[0] == nil {
+		t.Fatal("Expected non-nil dataset in response")
+	}
+
+	if element, ok := responder.datasets[0].GetElement(dicom.Tag{Group: 0x0008, Element: 0x0018}); !ok {
+		t.Error("Expected SOP Instance UID element in dataset")
+	} else if value := element.Value.(string); value != "1.2.3.4.5" {
+		t.Errorf("Unexpected SOP Instance UID value: %s", value)
 	}
 }
 
@@ -327,7 +353,7 @@ func TestRegistry_HandleDIMSEStreaming_NoHandler(t *testing.T) {
 	}
 
 	responder := &mockResponder{}
-	err := registry.HandleDIMSEStreaming(ctx, msg, nil, responder)
+	err := registry.HandleDIMSEStreaming(ctx, msg, nil, testMeta(), responder)
 	if err == nil {
 		t.Error("Expected error for unregistered command")
 	}
@@ -407,7 +433,7 @@ func TestRegistry_Integration(t *testing.T) {
 		CommandDataSetType:  0x0101,
 	}
 
-	resp, data, err := registry.HandleDIMSE(ctx, echoMsg, nil)
+	resp, dataset, err := registry.HandleDIMSE(ctx, echoMsg, nil, testMeta())
 	if err != nil {
 		t.Fatalf("C-ECHO failed: %v", err)
 	}
@@ -416,7 +442,7 @@ func TestRegistry_Integration(t *testing.T) {
 		t.Errorf("C-ECHO status = 0x%04x, want success", resp.Status)
 	}
 
-	if data != nil {
+	if dataset != nil {
 		t.Error("C-ECHO should not return data")
 	}
 }

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 
+	"github.com/caio-sobreiro/dicomnet/dicom"
 	"github.com/caio-sobreiro/dicomnet/interfaces"
 	"github.com/caio-sobreiro/dicomnet/types"
 )
@@ -36,6 +37,7 @@ const (
 type PDULayer interface {
 	SendDIMSEResponse(presContextID byte, commandData []byte) error
 	SendDIMSEResponseWithDataset(presContextID byte, commandData []byte, datasetData []byte) error
+	GetTransferSyntax(presContextID byte) (string, error)
 }
 
 // Service manages DIMSE operations and message routing
@@ -45,18 +47,38 @@ type Service struct {
 	datasetData []byte
 	currentMsg  *types.Message
 	logger      *slog.Logger
+	transferUID string
+	contextID   byte
 }
 
 // responseHandler implements ResponseSender for streaming responses
 type responseHandler struct {
-	service       *Service
-	presContextID byte
-	pduLayer      PDULayer
+	service               *Service
+	presContextID         byte
+	pduLayer              PDULayer
+	defaultTransferSyntax string
 }
 
 // SendResponse implements ResponseSender interface
-func (r *responseHandler) SendResponse(msg *types.Message, data []byte) error {
-	return r.service.sendDIMSEResponse(msg, data, r.presContextID, r.pduLayer)
+func (r *responseHandler) SendResponse(msg *types.Message, dataset *dicom.Dataset, transferSyntaxUID string) error {
+	tsUID := transferSyntaxUID
+	if tsUID == "" {
+		tsUID = r.defaultTransferSyntax
+	}
+
+	var datasetBytes []byte
+	var err error
+	if dataset != nil {
+		datasetBytes, err = dicom.EncodeDatasetWithTransferSyntax(dataset, tsUID)
+		if err != nil {
+			return fmt.Errorf("failed to encode dataset with transfer syntax %s: %w", tsUID, err)
+		}
+	}
+
+	// Propagate transfer syntax to message for downstream consumers
+	msg.TransferSyntaxUID = tsUID
+
+	return r.service.sendDIMSEResponse(msg, datasetBytes, r.presContextID, r.pduLayer)
 }
 
 // cGetResponder implements CGetResponder for C-GET operations
@@ -110,6 +132,16 @@ func (d *Service) HandleDIMSEMessage(presContextID byte, msgCtrlHeader byte, dat
 	d.logger.Debug("Processing DIMSE message",
 		"context_id", presContextID,
 		"control_header", fmt.Sprintf("0x%02x", msgCtrlHeader))
+	tsUID, err := pduLayer.GetTransferSyntax(presContextID)
+	if err != nil {
+		d.logger.Warn("Failed to retrieve transfer syntax for presentation context",
+			"context_id", presContextID,
+			"error", err)
+	}
+	if tsUID != "" {
+		d.transferUID = tsUID
+	}
+	d.contextID = presContextID
 
 	// Check message control header
 	// 0x01 = command, more fragments
@@ -167,54 +199,91 @@ func (d *Service) processCompleteMessage(ctx context.Context, presContextID byte
 		"message_id", d.currentMsg.MessageID,
 		"dataset_size", len(d.datasetData))
 
-	// Check if handler supports streaming (for multi-response operations like C-FIND, C-GET, C-MOVE)
+	tsUID := d.transferUID
+	if tsUID == "" {
+		if negotiatedTS, err := pduLayer.GetTransferSyntax(presContextID); err == nil {
+			tsUID = negotiatedTS
+		} else {
+			d.logger.WarnContext(ctx, "Unable to determine transfer syntax for presentation context",
+				"context_id", presContextID,
+				"error", err)
+		}
+	}
+	d.currentMsg.TransferSyntaxUID = tsUID
+
+	var parsedDataset *dicom.Dataset
+	if len(d.datasetData) > 0 {
+		var err error
+		parsedDataset, err = dicom.ParseDatasetWithTransferSyntax(d.datasetData, tsUID)
+		if err != nil {
+			d.logger.WarnContext(ctx, "Failed to parse dataset with negotiated transfer syntax",
+				"transfer_syntax", tsUID,
+				"error", err)
+		} else {
+			d.logger.DebugContext(ctx, "Parsed dataset using transfer syntax",
+				"transfer_syntax", tsUID)
+		}
+	}
+
+	meta := interfaces.MessageContext{
+		PresentationContextID: presContextID,
+		TransferSyntaxUID:     tsUID,
+		Dataset:               parsedDataset,
+	}
+
+	defer d.resetState()
+
 	if streamingHandler, ok := d.handler.(interfaces.StreamingServiceHandler); ok {
 		d.logger.DebugContext(ctx, "Using streaming handler for multi-response operation")
 
-		// For C-GET, provide a CGetResponder that can send C-STORE sub-operations
-		var responder interfaces.ResponseSender
-		if d.currentMsg.CommandField == CGetRQ {
-			responder = &cGetResponder{
-				responseHandler: responseHandler{
-					service:       d,
-					presContextID: presContextID,
-					pduLayer:      pduLayer,
-				},
-				messageIDCounter: 0,
-			}
-		} else {
-			responder = &responseHandler{
-				service:       d,
-				presContextID: presContextID,
-				pduLayer:      pduLayer,
-			}
-		}
-
-		err := streamingHandler.HandleDIMSEStreaming(ctx, d.currentMsg, d.datasetData, responder)
-
-		// Reset for next message
-		d.commandData = nil
-		d.datasetData = nil
-		d.currentMsg = nil
-
-		return err
+		responder := d.buildResponder(presContextID, pduLayer, tsUID)
+		return streamingHandler.HandleDIMSEStreaming(ctx, d.currentMsg, d.datasetData, meta, responder)
 	}
 
-	// Fallback to single-response handler
-	responseMsg, responseData, err := d.handler.HandleDIMSE(ctx, d.currentMsg, d.datasetData)
+	responseMsg, responseDataset, err := d.handler.HandleDIMSE(ctx, d.currentMsg, d.datasetData, meta)
 	if err != nil {
-		return fmt.Errorf("service handler failed: %v", err)
+		return fmt.Errorf("service handler failed: %w", err)
 	}
 
-	// Send response
-	err = d.sendDIMSEResponse(responseMsg, responseData, presContextID, pduLayer)
+	responseTS := responseMsg.TransferSyntaxUID
+	if responseTS == "" {
+		responseTS = tsUID
+	}
 
-	// Reset for next message
+	var encodedDataset []byte
+	if responseDataset != nil {
+		var encodeErr error
+		encodedDataset, encodeErr = dicom.EncodeDatasetWithTransferSyntax(responseDataset, responseTS)
+		if encodeErr != nil {
+			return fmt.Errorf("failed to encode response dataset using transfer syntax %s: %w", responseTS, encodeErr)
+		}
+	}
+
+	responseMsg.TransferSyntaxUID = responseTS
+	return d.sendDIMSEResponse(responseMsg, encodedDataset, presContextID, pduLayer)
+}
+
+func (d *Service) buildResponder(presContextID byte, pduLayer PDULayer, defaultTS string) interfaces.ResponseSender {
+	base := responseHandler{
+		service:               d,
+		presContextID:         presContextID,
+		pduLayer:              pduLayer,
+		defaultTransferSyntax: defaultTS,
+	}
+
+	if d.currentMsg != nil && d.currentMsg.CommandField == CGetRQ {
+		return &cGetResponder{responseHandler: base}
+	}
+
+	return &base
+}
+
+func (d *Service) resetState() {
 	d.commandData = nil
 	d.datasetData = nil
 	d.currentMsg = nil
-
-	return err
+	d.transferUID = ""
+	d.contextID = 0
 }
 
 // sendDIMSEResponse sends a DIMSE response

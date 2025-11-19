@@ -4,6 +4,8 @@ import (
 	"encoding/binary"
 	"fmt"
 	"strings"
+
+	"github.com/caio-sobreiro/dicomnet/types"
 )
 
 // VR (Value Representation) constants
@@ -42,6 +44,12 @@ const (
 	VR_US = "US" // Unsigned Short
 	VR_UT = "UT" // Unlimited Text
 	VR_UV = "UV" // Unsigned Very Long
+)
+
+// Common transfer syntax UIDs
+const (
+	TransferSyntaxImplicitVRLittleEndian = types.ImplicitVRLittleEndian
+	TransferSyntaxExplicitVRLittleEndian = types.ExplicitVRLittleEndian
 )
 
 // Tag represents a DICOM tag (group, element)
@@ -120,7 +128,7 @@ func (d *Dataset) GetStrings(tag Tag) []string {
 	return nil
 }
 
-// ParseDataset parses a DICOM dataset from raw bytes (Implicit VR Little Endian)
+// ParseDataset parses a DICOM dataset from raw bytes (Explicit VR Little Endian)
 func ParseDataset(data []byte) (*Dataset, error) {
 	dataset := NewDataset()
 
@@ -179,6 +187,54 @@ func ParseDataset(data []byte) (*Dataset, error) {
 		dataset.AddElement(tag, vr, value)
 
 		// Move to next element (including padding if odd length)
+		nextOffset := valueOffset + int(length)
+		if length%2 == 1 {
+			nextOffset++
+		}
+		offset = nextOffset
+	}
+
+	return dataset, nil
+}
+
+// ParseDatasetWithTransferSyntax parses a dataset using the provided transfer syntax.
+func ParseDatasetWithTransferSyntax(data []byte, transferSyntaxUID string) (*Dataset, error) {
+	switch transferSyntaxUID {
+	case "", TransferSyntaxExplicitVRLittleEndian:
+		return ParseDataset(data)
+	case TransferSyntaxImplicitVRLittleEndian:
+		return parseImplicitVRDataset(data)
+	default:
+		return ParseDataset(data)
+	}
+}
+
+func parseImplicitVRDataset(data []byte) (*Dataset, error) {
+	dataset := NewDataset()
+
+	if len(data) == 0 {
+		return dataset, nil
+	}
+
+	offset := 0
+	for offset+8 <= len(data) {
+		group := binary.LittleEndian.Uint16(data[offset : offset+2])
+		element := binary.LittleEndian.Uint16(data[offset+2 : offset+4])
+		tag := Tag{Group: group, Element: element}
+
+		length := binary.LittleEndian.Uint32(data[offset+4 : offset+8])
+		valueOffset := offset + 8
+
+		if valueOffset+int(length) > len(data) {
+			break
+		}
+
+		valueData := data[valueOffset : valueOffset+int(length)]
+		vr := determineVR(tag)
+		value := parseElementValue(tag, valueData)
+
+		dataset.AddElement(tag, vr, value)
+
 		nextOffset := valueOffset + int(length)
 		if length%2 == 1 {
 			nextOffset++
@@ -272,7 +328,7 @@ func determineVR(tag Tag) string {
 	}
 }
 
-// EncodeDataset encodes a dataset to bytes (Implicit VR Little Endian)
+// EncodeDataset encodes a dataset to bytes (Explicit VR Little Endian)
 func (d *Dataset) EncodeDataset() []byte {
 	var result []byte
 
@@ -339,6 +395,61 @@ func (d *Dataset) EncodeDataset() []byte {
 		}
 
 		// Value (already padded)
+		result = append(result, valueBytes...)
+	}
+
+	return result
+}
+
+// EncodeDatasetWithTransferSyntax encodes a dataset using the provided transfer syntax.
+func EncodeDatasetWithTransferSyntax(dataset *Dataset, transferSyntaxUID string) ([]byte, error) {
+	if dataset == nil {
+		return nil, nil
+	}
+
+	switch transferSyntaxUID {
+	case "", TransferSyntaxExplicitVRLittleEndian:
+		return dataset.EncodeDataset(), nil
+	case TransferSyntaxImplicitVRLittleEndian:
+		return encodeImplicitVRDataset(dataset), nil
+	default:
+		return dataset.EncodeDataset(), nil
+	}
+}
+
+func encodeImplicitVRDataset(dataset *Dataset) []byte {
+	var result []byte
+
+	var tags []Tag
+	for tag := range dataset.Elements {
+		tags = append(tags, tag)
+	}
+
+	for i := 0; i < len(tags)-1; i++ {
+		for j := i + 1; j < len(tags); j++ {
+			if tags[i].Group > tags[j].Group ||
+				(tags[i].Group == tags[j].Group && tags[i].Element > tags[j].Element) {
+				tags[i], tags[j] = tags[j], tags[i]
+			}
+		}
+	}
+
+	for _, tag := range tags {
+		element := dataset.Elements[tag]
+
+		tagBytes := make([]byte, 4)
+		binary.LittleEndian.PutUint16(tagBytes[0:2], tag.Group)
+		binary.LittleEndian.PutUint16(tagBytes[2:4], tag.Element)
+		result = append(result, tagBytes...)
+
+		valueBytes := encodeElementValue(element)
+		if len(valueBytes)%2 == 1 {
+			valueBytes = append(valueBytes, 0x20)
+		}
+
+		lengthBytes := make([]byte, 4)
+		binary.LittleEndian.PutUint32(lengthBytes, uint32(len(valueBytes)))
+		result = append(result, lengthBytes...)
 		result = append(result, valueBytes...)
 	}
 

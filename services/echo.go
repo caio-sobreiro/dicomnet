@@ -9,7 +9,9 @@ import (
 	"context"
 	"log/slog"
 
+	"github.com/caio-sobreiro/dicomnet/dicom"
 	"github.com/caio-sobreiro/dicomnet/dimse"
+	"github.com/caio-sobreiro/dicomnet/interfaces"
 	"github.com/caio-sobreiro/dicomnet/types"
 )
 
@@ -44,12 +46,13 @@ func NewEchoService() *EchoService {
 //   - ctx: Context for cancellation and deadlines
 //   - msg: The incoming C-ECHO-RQ DIMSE message
 //   - data: Dataset (always empty for C-ECHO)
+//   - meta: Metadata describing the transport context
 //
 // Returns:
 //   - Response message (C-ECHO-RSP) with success status
 //   - Response dataset (always nil for C-ECHO)
 //   - Error (always nil for successful echo)
-func (s *EchoService) HandleDIMSE(ctx context.Context, msg *types.Message, data []byte) (*types.Message, []byte, error) {
+func (s *EchoService) HandleDIMSE(ctx context.Context, msg *types.Message, data []byte, meta interfaces.MessageContext) (*types.Message, *dicom.Dataset, error) {
 	slog.DebugContext(ctx, "Processing C-ECHO request",
 		"message_id", msg.MessageID,
 		"affected_sop_class", msg.AffectedSOPClassUID)

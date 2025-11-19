@@ -5,6 +5,8 @@ import (
 	"errors"
 	"testing"
 
+	"github.com/caio-sobreiro/dicomnet/dicom"
+	"github.com/caio-sobreiro/dicomnet/interfaces"
 	"github.com/caio-sobreiro/dicomnet/types"
 )
 
@@ -12,6 +14,8 @@ import (
 type MockPDULayer struct {
 	SendDIMSEResponseFunc            func(presContextID byte, commandData []byte) error
 	SendDIMSEResponseWithDatasetFunc func(presContextID byte, commandData []byte, datasetData []byte) error
+	GetTransferSyntaxFunc            func(presContextID byte) (string, error)
+	TransferSyntaxUID                string
 }
 
 func (m *MockPDULayer) SendDIMSEResponse(presContextID byte, commandData []byte) error {
@@ -28,14 +32,21 @@ func (m *MockPDULayer) SendDIMSEResponseWithDataset(presContextID byte, commandD
 	return nil
 }
 
-// MockServiceHandler is a mock implementation of ServiceHandler for testing
-type MockServiceHandler struct {
-	HandleDIMSEFunc func(ctx context.Context, msg *types.Message, data []byte) (*types.Message, []byte, error)
+func (m *MockPDULayer) GetTransferSyntax(presContextID byte) (string, error) {
+	if m.GetTransferSyntaxFunc != nil {
+		return m.GetTransferSyntaxFunc(presContextID)
+	}
+	return m.TransferSyntaxUID, nil
 }
 
-func (m *MockServiceHandler) HandleDIMSE(ctx context.Context, msg *types.Message, data []byte) (*types.Message, []byte, error) {
+// MockServiceHandler is a mock implementation of ServiceHandler for testing
+type MockServiceHandler struct {
+	HandleDIMSEFunc func(ctx context.Context, msg *types.Message, data []byte, meta interfaces.MessageContext) (*types.Message, *dicom.Dataset, error)
+}
+
+func (m *MockServiceHandler) HandleDIMSE(ctx context.Context, msg *types.Message, data []byte, meta interfaces.MessageContext) (*types.Message, *dicom.Dataset, error) {
 	if m.HandleDIMSEFunc != nil {
-		return m.HandleDIMSEFunc(ctx, msg, data)
+		return m.HandleDIMSEFunc(ctx, msg, data, meta)
 	}
 	// Default response
 	return &types.Message{
@@ -62,7 +73,7 @@ func TestNewService(t *testing.T) {
 func TestService_HandleDIMSEMessage_CEchoNoDataset(t *testing.T) {
 	// Create handler that returns simple C-ECHO response
 	handler := &MockServiceHandler{
-		HandleDIMSEFunc: func(ctx context.Context, msg *types.Message, data []byte) (*types.Message, []byte, error) {
+		HandleDIMSEFunc: func(ctx context.Context, msg *types.Message, data []byte, meta interfaces.MessageContext) (*types.Message, *dicom.Dataset, error) {
 			return &types.Message{
 				CommandField:              CEchoRSP,
 				Status:                    StatusSuccess,
@@ -74,6 +85,7 @@ func TestService_HandleDIMSEMessage_CEchoNoDataset(t *testing.T) {
 
 	service := NewService(handler, nil)
 	pduLayer := &MockPDULayer{
+		TransferSyntaxUID: dicom.TransferSyntaxExplicitVRLittleEndian,
 		SendDIMSEResponseWithDatasetFunc: func(presContextID byte, commandData []byte, datasetData []byte) error {
 			if presContextID != 1 {
 				t.Errorf("Expected context ID 1, got %d", presContextID)
@@ -104,22 +116,27 @@ func TestService_HandleDIMSEMessage_CEchoNoDataset(t *testing.T) {
 func TestService_HandleDIMSEMessage_WithDataset(t *testing.T) {
 	// Create handler
 	handler := &MockServiceHandler{
-		HandleDIMSEFunc: func(ctx context.Context, msg *types.Message, data []byte) (*types.Message, []byte, error) {
+		HandleDIMSEFunc: func(ctx context.Context, msg *types.Message, data []byte, meta interfaces.MessageContext) (*types.Message, *dicom.Dataset, error) {
 			// Verify dataset was received
 			if len(data) == 0 {
 				t.Error("Expected dataset data")
+			}
+			parsed, err := dicom.ParseDatasetWithTransferSyntax(data, meta.TransferSyntaxUID)
+			if err != nil {
+				t.Fatalf("Failed to parse dataset: %v", err)
 			}
 			return &types.Message{
 				CommandField:              CFindRSP,
 				Status:                    StatusSuccess,
 				CommandDataSetType:        0x0000,
 				MessageIDBeingRespondedTo: msg.MessageID,
-			}, data, nil
+			}, parsed, nil
 		},
 	}
 
 	service := NewService(handler, nil)
 	pduLayer := &MockPDULayer{
+		TransferSyntaxUID: dicom.TransferSyntaxExplicitVRLittleEndian,
 		SendDIMSEResponseWithDatasetFunc: func(presContextID byte, commandData []byte, datasetData []byte) error {
 			if len(datasetData) == 0 {
 				t.Error("Expected dataset in response")
@@ -153,7 +170,7 @@ func TestService_HandleDIMSEMessage_WithDataset(t *testing.T) {
 
 func TestService_HandleDIMSEMessage_MultiFragment(t *testing.T) {
 	handler := &MockServiceHandler{
-		HandleDIMSEFunc: func(ctx context.Context, msg *types.Message, data []byte) (*types.Message, []byte, error) {
+		HandleDIMSEFunc: func(ctx context.Context, msg *types.Message, data []byte, meta interfaces.MessageContext) (*types.Message, *dicom.Dataset, error) {
 			// Verify all fragments were received
 			if len(data) < 20 {
 				t.Errorf("Expected at least 20 bytes of data, got %d", len(data))
@@ -168,7 +185,7 @@ func TestService_HandleDIMSEMessage_MultiFragment(t *testing.T) {
 	}
 
 	service := NewService(handler, nil)
-	pduLayer := &MockPDULayer{}
+	pduLayer := &MockPDULayer{TransferSyntaxUID: dicom.TransferSyntaxExplicitVRLittleEndian}
 
 	// Create command
 	msg := &types.Message{
@@ -215,13 +232,13 @@ func TestService_HandleDIMSEMessage_ParseError(t *testing.T) {
 func TestService_HandleDIMSEMessage_HandlerError(t *testing.T) {
 	// Create handler that returns an error
 	handler := &MockServiceHandler{
-		HandleDIMSEFunc: func(ctx context.Context, msg *types.Message, data []byte) (*types.Message, []byte, error) {
+		HandleDIMSEFunc: func(ctx context.Context, msg *types.Message, data []byte, meta interfaces.MessageContext) (*types.Message, *dicom.Dataset, error) {
 			return nil, nil, errors.New("handler processing failed")
 		},
 	}
 
 	service := NewService(handler, nil)
-	pduLayer := &MockPDULayer{}
+	pduLayer := &MockPDULayer{TransferSyntaxUID: dicom.TransferSyntaxExplicitVRLittleEndian}
 
 	// Create valid command
 	msg := &types.Message{
@@ -244,7 +261,7 @@ func TestService_HandleDIMSEMessage_HandlerError(t *testing.T) {
 
 func TestService_HandleDIMSEMessage_PDULayerError(t *testing.T) {
 	handler := &MockServiceHandler{
-		HandleDIMSEFunc: func(ctx context.Context, msg *types.Message, data []byte) (*types.Message, []byte, error) {
+		HandleDIMSEFunc: func(ctx context.Context, msg *types.Message, data []byte, meta interfaces.MessageContext) (*types.Message, *dicom.Dataset, error) {
 			return &types.Message{
 				CommandField:              CEchoRSP,
 				Status:                    StatusSuccess,
@@ -256,6 +273,7 @@ func TestService_HandleDIMSEMessage_PDULayerError(t *testing.T) {
 
 	service := NewService(handler, nil)
 	pduLayer := &MockPDULayer{
+		TransferSyntaxUID: dicom.TransferSyntaxExplicitVRLittleEndian,
 		SendDIMSEResponseWithDatasetFunc: func(presContextID byte, commandData []byte, datasetData []byte) error {
 			return errors.New("PDU send failed")
 		},

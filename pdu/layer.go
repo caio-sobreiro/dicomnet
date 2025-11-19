@@ -451,6 +451,24 @@ func (p *Layer) SendDIMSEResponseWithDataset(presContextID byte, commandData []b
 	return nil
 }
 
+// GetTransferSyntax returns the negotiated transfer syntax for the given presentation context.
+func (p *Layer) GetTransferSyntax(presContextID byte) (string, error) {
+	if p.associationCtx == nil {
+		return "", fmt.Errorf("association context not initialized")
+	}
+
+	ctx, ok := p.associationCtx.PresentationCtxs[presContextID]
+	if !ok {
+		return "", fmt.Errorf("presentation context %d not found", presContextID)
+	}
+
+	if ctx.TransferSyntax == "" {
+		return "", fmt.Errorf("no transfer syntax negotiated for presentation context %d", presContextID)
+	}
+
+	return ctx.TransferSyntax, nil
+}
+
 // createAssociateAccept creates a proper A-ASSOCIATE-AC PDU
 func (p *Layer) createAssociateAccept() []byte {
 	// Fixed fields (68 bytes)

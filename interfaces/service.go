@@ -4,22 +4,30 @@ package interfaces
 import (
 	"context"
 
+	"github.com/caio-sobreiro/dicomnet/dicom"
 	"github.com/caio-sobreiro/dicomnet/types"
 )
 
+// MessageContext carries metadata about the DIMSE message transport
+type MessageContext struct {
+	PresentationContextID byte
+	TransferSyntaxUID     string
+	Dataset               *dicom.Dataset
+}
+
 // ServiceHandler interface for handling DIMSE operations
 type ServiceHandler interface {
-	HandleDIMSE(ctx context.Context, msg *types.Message, data []byte) (*types.Message, []byte, error)
+	HandleDIMSE(ctx context.Context, msg *types.Message, data []byte, meta MessageContext) (*types.Message, *dicom.Dataset, error)
 }
 
 // StreamingServiceHandler interface for multi-response DIMSE operations
 type StreamingServiceHandler interface {
-	HandleDIMSEStreaming(ctx context.Context, msg *types.Message, data []byte, responder ResponseSender) error
+	HandleDIMSEStreaming(ctx context.Context, msg *types.Message, data []byte, meta MessageContext, responder ResponseSender) error
 }
 
 // ResponseSender interface for sending intermediate responses
 type ResponseSender interface {
-	SendResponse(msg *types.Message, data []byte) error
+	SendResponse(msg *types.Message, dataset *dicom.Dataset, transferSyntaxUID string) error
 }
 
 // CGetResponder interface for C-GET operations that need to send C-STORE sub-operations
@@ -38,4 +46,5 @@ type DIMSEHandler interface {
 type PDULayer interface {
 	SendDIMSEResponse(presContextID byte, commandData []byte) error
 	SendDIMSEResponseWithDataset(presContextID byte, commandData []byte, dataset []byte) error
+	GetTransferSyntax(presContextID byte) (string, error)
 }
