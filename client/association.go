@@ -470,3 +470,14 @@ func (a *Association) GetPresentationContextID(abstractSyntax string) (byte, err
 	}
 	return 0, fmt.Errorf("no accepted presentation context for abstract syntax: %s", abstractSyntax)
 }
+
+// GetNegotiatedTransferSyntax returns the transfer syntax that was negotiated
+// for the given SOP class (abstract syntax)
+func (a *Association) GetNegotiatedTransferSyntax(abstractSyntax string) (string, error) {
+	for _, pc := range a.presentationCtxs {
+		if pc.AbstractSyntax == abstractSyntax && pc.Accepted {
+			return pc.TransferSyntax, nil
+		}
+	}
+	return "", fmt.Errorf("no accepted presentation context for abstract syntax: %s", abstractSyntax)
+}
