@@ -76,6 +76,14 @@ var supportedAbstractSyntaxes = map[string]bool{
 var supportedTransferSyntaxes = map[string]bool{
 	types.ImplicitVRLittleEndian: true, // Implicit VR Little Endian
 	types.ExplicitVRLittleEndian: true, // Explicit VR Little Endian
+	// Lossless compressed syntaxes — accepted and forwarded as-is to Orthanc.
+	// Metadata elements (Patient/Study UIDs) are still parseable with the
+	// Explicit VR parser; pixel data is opaque and passed through unchanged.
+	types.JPEGLosslessSV1:  true, // JPEG Lossless SV1 (most common)
+	types.JPEGLossless:     true, // JPEG Lossless Process 14
+	types.JPEG2000Lossless: true, // JPEG 2000 Lossless (preferred by GE)
+	types.JPEG2000:         true, // JPEG 2000 (lossy/lossless)
+	types.RLELossless:      true, // RLE Lossless
 }
 
 func normalizeUID(raw []byte) string {
