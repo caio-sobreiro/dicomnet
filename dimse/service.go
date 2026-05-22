@@ -325,8 +325,8 @@ func (d *Service) createDIMSECommand(msg *types.Message) []byte {
 		elements = append(elements, msgID...)
 	}
 
-	// Message ID Being Responded To (0000,0120)
-	if msg.MessageIDBeingRespondedTo > 0 {
+	// Message ID Being Responded To (0000,0120) - always present in responses
+	if msg.CommandField&0x8000 != 0 {
 		elements = append(elements, 0x00, 0x00, 0x20, 0x01) // Tag
 		elements = append(elements, 0x02, 0x00, 0x00, 0x00) // Length = 2
 		msgID := make([]byte, 2)

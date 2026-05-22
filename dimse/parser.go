@@ -95,6 +95,15 @@ func parseDIMSECommand(data []byte, logger *slog.Logger) (*types.Message, error)
 					}
 					msg.MoveDestination = strings.TrimSpace(moveDestination)
 				}
+			case 0x1000: // Affected SOP Instance UID (for C-STORE-RQ)
+				if length > 0 {
+					sopInstanceUID := string(data[valueStart:valueEnd])
+					// Remove null padding
+					if idx := strings.IndexByte(sopInstanceUID, 0); idx != -1 {
+						sopInstanceUID = sopInstanceUID[:idx]
+					}
+					msg.AffectedSOPInstanceUID = strings.TrimSpace(sopInstanceUID)
+				}
 			default:
 				// Skip unknown command elements silently
 			}
@@ -126,8 +135,8 @@ func createDIMSECommand(msg *types.Message) []byte {
 	binary.LittleEndian.PutUint16(cmdBytes, msg.CommandField)
 	result = append(result, cmdBytes...)
 
-	// Message ID Being Responded To (0000,0120)
-	if msg.MessageIDBeingRespondedTo > 0 {
+	// Message ID Being Responded To (0000,0120) - always present in responses
+	if msg.CommandField&0x8000 != 0 {
 		result = append(result, 0x00, 0x00, 0x20, 0x01) // Tag
 		result = append(result, 0x02, 0x00, 0x00, 0x00) // Length = 2
 		msgIDBytes := make([]byte, 2)

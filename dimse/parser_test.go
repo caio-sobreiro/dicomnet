@@ -381,6 +381,104 @@ func TestCreateDIMSECommand_RoundTrip(t *testing.T) {
 	}
 }
 
+// TestParseDIMSECommand_CStoreRQ verifies that Affected SOP Instance UID (0000,1000)
+// is correctly parsed from a C-STORE-RQ command, which is required to echo it
+// back in the C-STORE-RSP per DICOM PS3.7 Table 9.3-1.
+func TestParseDIMSECommand_CStoreRQ(t *testing.T) {
+	var buf []byte
+
+	// Command Field (0000,0100) = C-STORE-RQ
+	buf = append(buf, 0x00, 0x00, 0x00, 0x01)
+	buf = append(buf, 0x02, 0x00, 0x00, 0x00)
+	buf = append(buf, 0x01, 0x00) // CStoreRQ = 0x0001
+
+	// Message ID (0000,0110)
+	buf = append(buf, 0x00, 0x00, 0x10, 0x01)
+	buf = append(buf, 0x02, 0x00, 0x00, 0x00)
+	buf = append(buf, 0x00, 0x00) // MessageID = 0 (GE workstations may send 0)
+
+	// Affected SOP Class UID (0000,0002)
+	buf = append(buf, 0x00, 0x00, 0x02, 0x00)
+	sopClass := []byte("1.2.840.10008.5.1.4.1.1.4\x00") // MR Image Storage, padded to even
+	lenBytes := make([]byte, 4)
+	binary.LittleEndian.PutUint32(lenBytes, uint32(len(sopClass)))
+	buf = append(buf, lenBytes...)
+	buf = append(buf, sopClass...)
+
+	// Command Data Set Type (0000,0800)
+	buf = append(buf, 0x00, 0x00, 0x00, 0x08)
+	buf = append(buf, 0x02, 0x00, 0x00, 0x00)
+	buf = append(buf, 0x00, 0x00) // Dataset present
+
+	// Affected SOP Instance UID (0000,1000) - previously not parsed
+	buf = append(buf, 0x00, 0x00, 0x00, 0x10)
+	sopInstance := []byte("1.2.3.4.5.6.7.8.9.0\x00") // padded to even
+	binary.LittleEndian.PutUint32(lenBytes, uint32(len(sopInstance)))
+	buf = append(buf, lenBytes...)
+	buf = append(buf, sopInstance...)
+
+	msg, err := parseDIMSECommand(buf, nil)
+	if err != nil {
+		t.Fatalf("parseDIMSECommand() error = %v", err)
+	}
+
+	if msg.CommandField != CStoreRQ {
+		t.Errorf("CommandField = 0x%04x, want 0x%04x", msg.CommandField, CStoreRQ)
+	}
+	if msg.AffectedSOPClassUID != "1.2.840.10008.5.1.4.1.1.4" {
+		t.Errorf("AffectedSOPClassUID = %q, want %q", msg.AffectedSOPClassUID, "1.2.840.10008.5.1.4.1.1.4")
+	}
+	if msg.AffectedSOPInstanceUID != "1.2.3.4.5.6.7.8.9.0" {
+		t.Errorf("AffectedSOPInstanceUID = %q, want %q", msg.AffectedSOPInstanceUID, "1.2.3.4.5.6.7.8.9.0")
+	}
+}
+
+// TestCreateDIMSECommand_ResponseWithZeroMessageID verifies that a C-STORE-RSP
+// always includes (0000,0120) MessageIDBeingRespondedTo even when the value is 0,
+// as required by DICOM PS3.7. Strict implementations (e.g. GE AW workstations)
+// will abort the association if this field is missing.
+func TestCreateDIMSECommand_ResponseWithZeroMessageID(t *testing.T) {
+	msg := types.Message{
+		CommandField:              CStoreRSP,
+		MessageIDBeingRespondedTo: 0, // GE AW workstations may use MessageID=0
+		AffectedSOPClassUID:       "1.2.840.10008.5.1.4.1.1.4",
+		AffectedSOPInstanceUID:    "1.2.3.4.5.6.7.8.9.0",
+		CommandDataSetType:        0x0101,
+		Status:                    StatusSuccess,
+	}
+
+	data := createDIMSECommand(&msg)
+
+	// Scan encoded bytes for tag (0000,0120)
+	found := false
+	offset := 0
+	for offset+8 <= len(data) {
+		group := binary.LittleEndian.Uint16(data[offset : offset+2])
+		element := binary.LittleEndian.Uint16(data[offset+2 : offset+4])
+		length := binary.LittleEndian.Uint32(data[offset+4 : offset+8])
+		if group == 0x0000 && element == 0x0120 {
+			found = true
+			if length != 2 {
+				t.Errorf("(0000,0120) length = %d, want 2", length)
+			}
+			if offset+10 <= len(data) {
+				val := binary.LittleEndian.Uint16(data[offset+8 : offset+10])
+				if val != 0 {
+					t.Errorf("(0000,0120) value = %d, want 0", val)
+				}
+			}
+			break
+		}
+		offset += 8 + int(length)
+		if length%2 == 1 {
+			offset++
+		}
+	}
+	if !found {
+		t.Error("(0000,0120) MessageIDBeingRespondedTo not found in encoded C-STORE-RSP with MessageID=0")
+	}
+}
+
 func TestCreateDIMSECommand_OddLengthUID(t *testing.T) {
 	msg := types.Message{
 		CommandField:        types.CEchoRQ,
