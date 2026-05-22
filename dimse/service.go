@@ -334,19 +334,6 @@ func (d *Service) createDIMSECommand(msg *types.Message) []byte {
 		elements = append(elements, msgID...)
 	}
 
-	// Affected SOP Instance UID (0000,1000) - for C-STORE
-	if msg.AffectedSOPInstanceUID != "" {
-		sopInstanceUID := msg.AffectedSOPInstanceUID
-		if len(sopInstanceUID)%2 == 1 {
-			sopInstanceUID += "\x00"
-		}
-		elements = append(elements, 0x00, 0x00, 0x00, 0x10) // Tag
-		sopInstLen := make([]byte, 4)
-		binary.LittleEndian.PutUint32(sopInstLen, uint32(len(sopInstanceUID)))
-		elements = append(elements, sopInstLen...)
-		elements = append(elements, []byte(sopInstanceUID)...)
-	}
-
 	// CommandDataSetType (0000,0800)
 	elements = append(elements, 0x00, 0x00, 0x00, 0x08) // Tag
 	elements = append(elements, 0x02, 0x00, 0x00, 0x00) // Length = 2
@@ -360,6 +347,19 @@ func (d *Service) createDIMSECommand(msg *types.Message) []byte {
 	status := make([]byte, 2)
 	binary.LittleEndian.PutUint16(status, msg.Status)
 	elements = append(elements, status...)
+
+	// Affected SOP Instance UID (0000,1000) - for C-STORE; must follow (0000,0900)
+	if msg.AffectedSOPInstanceUID != "" {
+		sopInstanceUID := msg.AffectedSOPInstanceUID
+		if len(sopInstanceUID)%2 == 1 {
+			sopInstanceUID += "\x00"
+		}
+		elements = append(elements, 0x00, 0x00, 0x00, 0x10) // Tag
+		sopInstLen := make([]byte, 4)
+		binary.LittleEndian.PutUint32(sopInstLen, uint32(len(sopInstanceUID)))
+		elements = append(elements, sopInstLen...)
+		elements = append(elements, []byte(sopInstanceUID)...)
+	}
 
 	// C-MOVE response counters (optional, only for C-MOVE-RSP)
 	if msg.NumberOfRemainingSuboperations != nil {

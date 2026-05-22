@@ -88,11 +88,14 @@ func supportsAbstractSyntax(uid string) bool {
 	if supportedAbstractSyntaxes[uid] {
 		return true
 	}
-	// Accept all storage SOP classes (C-STORE)
+	// Accept all storage SOP classes including proprietary/unknown UIDs.
+	// As a proxy we forward everything to Orthanc; Orthanc is the real gatekeeper.
 	if types.IsStorageSOPClass(uid) {
 		return true
 	}
-	return false
+	// Accept any unrecognised UID — it will be forwarded as a C-STORE attempt.
+	// A reject here would prevent the workstation from even sending the image.
+	return true
 }
 
 func supportsTransferSyntax(uid string) bool {

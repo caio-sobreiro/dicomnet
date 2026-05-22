@@ -128,6 +128,20 @@ func parseDIMSECommand(data []byte, logger *slog.Logger) (*types.Message, error)
 func createDIMSECommand(msg *types.Message) []byte {
 	var result []byte
 
+	// Affected SOP Class UID (0000,0002) - must come first in ascending tag order
+	if msg.AffectedSOPClassUID != "" {
+		result = append(result, 0x00, 0x00, 0x02, 0x00) // Tag
+		sopClassUIDBytes := []byte(msg.AffectedSOPClassUID)
+		// Ensure even length
+		if len(sopClassUIDBytes)%2 == 1 {
+			sopClassUIDBytes = append(sopClassUIDBytes, 0x00) // Null pad
+		}
+		lengthBytes := make([]byte, 4)
+		binary.LittleEndian.PutUint32(lengthBytes, uint32(len(sopClassUIDBytes)))
+		result = append(result, lengthBytes...)
+		result = append(result, sopClassUIDBytes...)
+	}
+
 	// Command Field (0000,0100)
 	result = append(result, 0x00, 0x00, 0x00, 0x01) // Tag
 	result = append(result, 0x02, 0x00, 0x00, 0x00) // Length = 2
@@ -157,20 +171,6 @@ func createDIMSECommand(msg *types.Message) []byte {
 	statusBytes := make([]byte, 2)
 	binary.LittleEndian.PutUint16(statusBytes, msg.Status)
 	result = append(result, statusBytes...)
-
-	// Affected SOP Class UID (0000,0002)
-	if msg.AffectedSOPClassUID != "" {
-		result = append(result, 0x00, 0x00, 0x02, 0x00) // Tag
-		sopClassUIDBytes := []byte(msg.AffectedSOPClassUID)
-		// Ensure even length
-		if len(sopClassUIDBytes)%2 == 1 {
-			sopClassUIDBytes = append(sopClassUIDBytes, 0x00) // Null pad
-		}
-		lengthBytes := make([]byte, 4)
-		binary.LittleEndian.PutUint32(lengthBytes, uint32(len(sopClassUIDBytes)))
-		result = append(result, lengthBytes...)
-		result = append(result, sopClassUIDBytes...)
-	}
 
 	return result
 }
